@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0B2A4A">
+<title>Control de Herramientas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --bg:#0B2A4A;
+    --bg-grid: rgba(255,255,255,0.055);
+    --panel:#123B63;
+    --panel-2:#0F3258;
+    --line: rgba(255,255,255,0.14);
+    --text:#EDF2F7;
+    --text-dim:#93AEC9;
+    --accent:#5FD3E8;
+    --accent-dim: rgba(95,211,232,0.15);
+    --warn:#FFC93C;
+    --danger:#FF6B4A;
+    --success:#6FCF97;
+    --radius: 10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/28px 28px,
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/28px 28px,
+      var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .eyebrow{
+    font-family:'Space Mono', monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--accent);
+  }
+  h1,h2,h3{
+    font-family:'Space Mono', monospace;
+    letter-spacing:.02em;
+    margin:0;
+  }
+  .mono{font-family:'IBM Plex Mono', monospace;}
+  #app{
+    max-width:520px;
+    margin:0 auto;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    padding-bottom:78px;
+  }
+  header{
+    padding:22px 18px 14px;
+    border-bottom:1px solid var(--line);
+  }
+  header h1{font-size:19px;}
+  main{flex:1; padding:16px;}
+  .tab{display:none;}
+  .tab.active{display:block; animation:fadeIn .18s ease;}
+  @keyframes fadeIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:14px;
+  }
+  .panel-dashed{
+    border:1px dashed var(--line);
+  }
+
+  .btn{
+    font-family:'Space Mono', monospace;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    font-size:12.5px;
+    border-radius:8px;
+    border:1px solid var(--accent);
+    background:var(--accent-dim);
+    color:var(--accent);
+    padding:12px 16px;
+    cursor:pointer;
+    width:100%;
+    transition:background .15s;
+  }
+  .btn:active{background:rgba(95,211,232,0.3);}
+  .btn-solid{background:var(--accent); color:#062535; border-color:var(--accent);}
+  .btn-ghost{background:transparent; border-color:var(--line); color:var(--text-dim);}
+  .btn-danger{border-color:var(--danger); color:var(--danger); background:rgba(255,107,74,0.12);}
+  .btn-success{border-color:var(--success); color:var(--success); background:rgba(111,207,151,0.12);}
+  .btn-row{display:flex; gap:8px;}
+  .btn-row .btn{width:auto; flex:1;}
+
+  label{
+    display:block;
+    font-family:'Space Mono', monospace;
+    font-size:10.5px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    margin-bottom:6px;
+    margin-top:14px;
+  }
+  label:first-child{margin-top:0;}
+  input, select{
+    width:100%;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    padding:11px 12px;
+    border-radius:8px;
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:14.5px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--accent);}
+
+  /* ---- nav ---- */
+  nav.tabbar{
+    position:fixed; bottom:0; left:0; right:0;
+    max-width:520px; margin:0 auto;
+    display:flex;
+    background:rgba(11,42,74,0.95);
+    backdrop-filter:blur(6px);
+    border-top:1px solid var(--line);
+  }
+  nav.tabbar button{
+    flex:1; background:none; border:none; color:var(--text-dim);
+    font-family:'Space Mono', monospace; font-size:10px; letter-spacing:.05em;
+    text-transform:uppercase; padding:11px 4px 9px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+  }
+  nav.tabbar button.active{color:var(--accent);}
+  nav.tabbar .dot{width:5px;height:5px;border-radius:50%; background:transparent;}
+  nav.tabbar button.active .dot{background:var(--accent);}
+
+  /* ---- tool tag (elemento distintivo) ---- */
+  .tag-card{
+    background:#F4F6F8;
+    color:#0B2A4A;
+    border-radius:10px;
+    border:1px dashed #0B2A4A55;
+    padding:14px 14px 12px;
+    position:relative;
+    display:flex; align-items:center; gap:12px;
+  }
+  .tag-card .tag-hole{
+    position:absolute; top:-7px; left:50%; transform:translateX(-50%);
+    width:14px; height:14px; border-radius:50%;
+    background:var(--bg);
+    border:1px solid var(--line);
+  }
+  .tag-qr{flex-shrink:0; width:64px; height:64px; background:#fff; padding:4px; border-radius:4px;}
+  .tag-qr img, .tag-qr canvas{width:100%!important; height:100%!important;}
+  .tag-info{flex:1; min-width:0;}
+  .tag-info .name{font-weight:600; font-size:14.5px; margin:0 0 3px;}
+  .tag-info .code{font-family:'IBM Plex Mono', monospace; font-size:11.5px; opacity:.65;}
+  .tag-info .cat{font-size:11px; opacity:.55; text-transform:uppercase; letter-spacing:.04em; margin-top:2px;}
+
+  .status-chip{
+    display:inline-block; font-family:'Space Mono', monospace; font-size:10px;
+    text-transform:uppercase; letter-spacing:.05em; padding:3px 8px; border-radius:20px;
+    border:1px solid currentColor;
+  }
+  .status-available{color:var(--success);}
+  .status-loaned{color:var(--warn);}
+  .status-overdue{color:var(--danger);}
+
+  .item-row{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:12px 0; border-bottom:1px solid var(--line); gap:10px;
+  }
+  .item-row:last-child{border-bottom:none;}
+  .empty-state{text-align:center; padding:36px 10px; color:var(--text-dim);}
+  .empty-state .eyebrow{display:block; margin-bottom:6px;}
+
+  /* ---- scanner overlay ---- */
+  #scanner-modal{
+    position:fixed; inset:0; background:#04121F; z-index:50;
+    display:none; flex-direction:column;
+  }
+  #scanner-modal.show{display:flex;}
+  #reader{width:100%; max-width:480px; margin:auto;}
+  #scanner-modal .close-scan{
+    position:absolute; top:16px; right:16px; z-index:5;
+    background:rgba(255,255,255,.1); border:1px solid var(--line); color:var(--text);
+    border-radius:50%; width:38px; height:38px; font-size:18px; cursor:pointer;
+  }
+  #scanner-modal .scan-hint{
+    text-align:center; color:var(--text-dim); font-family:'Space Mono',monospace;
+    font-size:11px; letter-spacing:.06em; text-transform:uppercase; padding:14px;
+  }
+
+  /* ---- generic modal ---- */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(4,18,31,.72); z-index:40;
+    display:none; align-items:flex-end; justify-content:center;
+  }
+  .modal-backdrop.show{display:flex;}
+  .modal-sheet{
+    background:var(--bg); width:100%; max-width:520px;
+    border-radius:16px 16px 0 0; border:1px solid var(--line); border-bottom:none;
+    padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+    max-height:88vh; overflow-y:auto;
+  }
+  .modal-sheet h3{font-size:15px; margin-bottom:2px;}
+  .modal-close-x{
+    float:right; background:none; border:none; color:var(--text-dim); font-size:20px; cursor:pointer;
+  }
+
+  .banner{
+    display:flex; gap:10px; align-items:flex-start;
+    padding:11px 12px; border-radius:8px; font-size:13px; margin-bottom:14px;
+  }
+  .banner-danger{background:rgba(255,107,74,.12); border:1px solid var(--danger); color:#FFD6C9;}
+  .banner-info{background:var(--accent-dim); border:1px solid var(--accent); color:var(--text);}
+
+  #print-area{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #print-area, #print-area *{visibility:visible;}
+    #print-area{display:block!important; position:absolute; top:20px; left:20px;}
+  }
+  .toast{
+    position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
+    background:var(--panel); border:1px solid var(--accent); color:var(--text);
+    padding:10px 16px; border-radius:8px; font-size:13px; z-index:60;
+    opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .toast.show{opacity:1;}
+  .field-hint{font-size:11.5px; color:var(--text-dim); margin-top:5px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="eyebrow">Control de préstamos</div>
+    <h1>🛠 HERRAMIENTAS</h1>
+  </header>
+
+  <main>
+    <!-- ===================== ESCANEAR ===================== -->
+    <section class="tab active" id="tab-scan">
+      <div id="setup-warning"></div>
+      <div class="panel" style="text-align:center; padding:28px 16px;">
+        <div class="eyebrow" style="margin-bottom:10px;">Paso 1</div>
+        <h2 style="font-size:16px; margin-bottom:6px;">Escanea el código</h2>
+        <p style="color:var(--text-dim); font-size:13px; margin:0 0 18px;">
+          Apunta la cámara a la etiqueta QR de la herramienta para prestarla o registrarla como devuelta.
+        </p>
+        <button class="btn btn-solid" onclick="startScanner()">▣ Iniciar escaneo</button>
+      </div>
+      <div class="panel panel-dashed" id="scan-recent-panel" style="display:none;">
+        <div class="eyebrow" style="margin-bottom:8px;">Último escaneo</div>
+        <div id="scan-recent"></div>
+      </div>
+    </section>
+
+    <!-- ===================== INVENTARIO ===================== -->
+    <section class="tab" id="tab-tools">
+      <div class="btn-row" style="margin-bottom:14px;">
+        <button class="btn btn-solid" onclick="openAddToolModal()">+ Añadir herramienta</button>
+      </div>
+      <div id="tools-list"></div>
+    </section>
+
+    <!-- ===================== PRÉSTAMOS ===================== -->
+    <section class="tab" id="tab-loans">
+      <div class="panel" id="loans-summary" style="display:none;"></div>
+      <div id="loans-list"></div>
+    </section>
+
+    <!-- ===================== EQUIPO ===================== -->
+    <section class="tab" id="tab-team">
+      <div class="banner banner-info">
+        👷 Aquí se registra el equipo del proyecto (quienes prestan las herramientas). Las personas externas que reciben una herramienta no necesitan estar aquí — su correo se pide directo al registrar el préstamo.
+      </div>
+      <div class="btn-row" style="margin-bottom:14px;">
+        <button class="btn btn-solid" onclick="openAddTeamModal()">+ Añadir persona</button>
+      </div>
+      <div id="team-list"></div>
+    </section>
+
+    <!-- ===================== AJUSTES ===================== -->
+    <section class="tab" id="tab-settings">
+      <div class="panel">
+        <div class="eyebrow" style="margin-bottom:4px;">Mi registro</div>
+        <p style="font-size:12.5px; color:var(--text-dim); margin:2px 0 4px;">
+          Regístrate para aparecer en la lista de "quién presta" al registrar un préstamo.
+        </p>
+        <label>Nombre</label>
+        <input id="settings-myname" placeholder="Tu nombre">
+        <label>Correo</label>
+        <input id="settings-myemail" type="email" placeholder="tu@correo.com">
+        <label>Teléfono</label>
+        <input id="settings-myphone" placeholder="Ej: 3001234567">
+        <div style="margin-top:16px;">
+          <button class="btn btn-solid" onclick="saveSettings()">Guardar mis datos</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-tab="scan" class="active" onclick="switchTab('scan')"><span class="dot"></span>Escanear</button>
+    <button data-tab="tools" onclick="switchTab('tools')"><span class="dot"></span>Inventario</button>
+    <button data-tab="loans" onclick="switchTab('loans')"><span class="dot"></span>Préstamos</button>
+    <button data-tab="team" onclick="switchTab('team')"><span class="dot"></span>Equipo</button>
+    <button data-tab="settings" onclick="switchTab('settings')"><span class="dot"></span>Ajustes</button>
+  </nav>
+</div>
+
+<!-- SCANNER OVERLAY -->
+<div id="scanner-modal">
+  <button class="close-scan" onclick="stopScanner()">✕</button>
+  <div id="reader"></div>
+  <div class="scan-hint">Buscando código QR...</div>
+</div>
+
+<!-- MODAL GENÉRICO -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal-sheet" id="modal-sheet"></div>
+</div>
+
+<div id="print-area"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+
+const API_URL = 'https://script.google.com/macros/s/AKfycbzdkuIlxm3bK_DMXVy2ggIB4PpSXSEF6a5_sgnT53EtqdWvqc99l6Lvu41CNtW3qpkA/exec';
+
+let MY_NAME = localStorage.getItem('toolwatch_my_name') || '';
+let MY_EMAIL = localStorage.getItem('toolwatch_my_email') || '';
+let MY_PHONE = localStorage.getItem('toolwatch_my_phone') || '';
+let state = { tools: [], team: [], loans: [] };
+let html5QrCode = null;
+
+document.getElementById('settings-myname').value = MY_NAME;
+document.getElementById('settings-myemail').value = MY_EMAIL;
+document.getElementById('settings-myphone').value = MY_PHONE;
+
+async function saveSettings(){
+  MY_NAME = document.getElementById('settings-myname').value.trim();
+  MY_EMAIL = document.getElementById('settings-myemail').value.trim();
+  MY_PHONE = document.getElementById('settings-myphone').value.trim();
+  if(!MY_NAME){ showToast('Escribe tu nombre'); return; }
+  localStorage.setItem('toolwatch_my_name', MY_NAME);
+  localStorage.setItem('toolwatch_my_email', MY_EMAIL);
+  localStorage.setItem('toolwatch_my_phone', MY_PHONE);
+
+  try{
+    const existing = state.team.find(t => MY_EMAIL && t.email === MY_EMAIL);
+    if(!existing){
+      state = await callApi('addTeamMember', { name: MY_NAME, email: MY_EMAIL, phone: MY_PHONE });
+      renderAll();
+    }
+    showToast('Datos guardados ✓');
+  }catch(e){
+    showToast('Se guardó en este dispositivo, pero no se pudo sincronizar: ' + e.message);
+  }
+}
+
+function renderSetupWarning(){
+  const el = document.getElementById('setup-warning');
+  if(!API_URL){
+    el.innerHTML = `<div class="banner banner-danger">⚠️ Esta app no está conectada al backend. Contacta a quien la configuró.</div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+/* ============================================================
+   API
+============================================================ */
+async function callApi(action, payload){
+  if(!API_URL){ showToast('Configura la URL en Ajustes primero'); throw new Error('sin API_URL'); }
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, payload: payload || {} })
+  });
+  const json = await res.json();
+  if(!json.ok) throw new Error(json.error || 'Error desconocido');
+  return json.data;
+}
+
+async function loadData(){
+  try{
+    state = await callApi('getData');
+    renderAll();
+  }catch(e){
+    showToast('No se pudo conectar: ' + e.message);
+  }
+}
+
+/* ============================================================
+   NAVEGACIÓN
+============================================================ */
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('nav.tabbar button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector(`nav.tabbar button[data-tab="${name}"]`).classList.add('active');
+  renderAll();
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function genCode(){
+  return 'H-' + Date.now().toString(36).toUpperCase().slice(-5) + Math.floor(Math.random()*90+10);
+}
+
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function addDaysISO(days){
+  const d = new Date(); d.setDate(d.getDate()+days);
+  return d.toISOString().slice(0,10);
+}
+
+function daysBetween(a, b){
+  const A = new Date(a); A.setHours(0,0,0,0);
+  const B = new Date(b); B.setHours(0,0,0,0);
+  return Math.round((B - A) / 86400000);
+}
+
+/* ============================================================
+   ESCÁNER
+============================================================ */
+function startScanner(){
+  if(!API_URL){ switchTab('settings'); showToast('Configura primero la URL del backend'); return; }
+  document.getElementById('scanner-modal').classList.add('show');
+  html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 240 },
+    onScanSuccess,
+    () => {}
+  ).catch(err => {
+    showToast('No se pudo abrir la cámara');
+    stopScanner();
+  });
+}
+
+function stopScanner(){
+  document.getElementById('scanner-modal').classList.remove('show');
+  if(html5QrCode){
+    html5QrCode.stop().then(()=>html5QrCode.clear()).catch(()=>{});
+  }
+}
+
+function onScanSuccess(decodedText){
+  stopScanner();
+  handleScannedCode(decodedText.trim());
+}
+
+function handleScannedCode(code){
+  const tool = state.tools.find(t => t.code === code);
+  document.getElementById('scan-recent-panel').style.display = 'block';
+  if(!tool){
+    document.getElementById('scan-recent').innerHTML = `
+      <p style="font-size:13px; color:var(--text-dim); margin:0 0 10px;">
+        El código <span class="mono">${escapeHtml(code)}</span> no está registrado todavía.
+      </p>
+      <button class="btn btn-solid" onclick="openAddToolModal('${escapeHtml(code)}')">Registrar esta herramienta</button>
+    `;
+    return;
+  }
+  if(tool.status === 'available'){
+    openLoanModal(tool);
+  } else {
+    openReturnModal(tool);
+  }
+}
+
+/* ============================================================
+   MODAL GENÉRICO
+============================================================ */
+function openModal(html){
+  document.getElementById('modal-sheet').innerHTML = html;
+  document.getElementById('modal-backdrop').classList.add('show');
+}
+function closeModal(){
+  document.getElementById('modal-backdrop').classList.remove('show');
+}
+
+/* ---------- Añadir herramienta ---------- */
+function openAddToolModal(prefillCode){
+  const code = prefillCode || genCode();
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>Nueva herramienta</h3>
+    <label>Nombre</label>
+    <input id="nt-name" placeholder="Ej: Taladro Bosch">
+    <label>Categoría (opcional)</label>
+    <input id="nt-cat" placeholder="Ej: Eléctrica">
+    <label>Código</label>
+    <input id="nt-code" value="${escapeHtml(code)}" class="mono">
+    <div style="margin-top:18px;">
+      <button class="btn btn-solid" onclick="submitAddTool()">Guardar y generar etiqueta</button>
+    </div>
+  `);
+}
+
+async function submitAddTool(){
+  const name = document.getElementById('nt-name').value.trim();
+  const cat = document.getElementById('nt-cat').value.trim();
+  const code = document.getElementById('nt-code').value.trim();
+  if(!name || !code){ showToast('Nombre y código son obligatorios'); return; }
+  try{
+    state = await callApi('addTool', { name, category: cat, code });
+    closeModal();
+    renderAll();
+    const tool = state.tools.find(t => t.code === code);
+    if(tool) openTagPreview(tool);
+  }catch(e){ showToast(e.message); }
+}
+
+function openTagPreview(tool){
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>Etiqueta lista</h3>
+    <p style="font-size:12.5px; color:var(--text-dim); margin:2px 0 14px;">Imprímela y pégala en la herramienta.</p>
+    <div class="tag-card" style="margin-bottom:14px;">
+      <div class="tag-hole"></div>
+      <div class="tag-qr" id="preview-qr"></div>
+      <div class="tag-info">
+        <p class="name">${escapeHtml(tool.name)}</p>
+        <p class="code">${escapeHtml(tool.code)}</p>
+        <p class="cat">${escapeHtml(tool.category || '')}</p>
+      </div>
+    </div>
+    <button class="btn btn-solid" onclick='printTag(${JSON.stringify(tool)})'>🖨 Imprimir etiqueta</button>
+  `);
+  new QRCode(document.getElementById('preview-qr'), { text: tool.code, width: 120, height: 120 });
+}
+
+function printTag(tool){
+  const area = document.getElementById('print-area');
+  area.innerHTML = `
+    <div class="tag-card" style="width:260px;">
+      <div class="tag-hole"></div>
+      <div class="tag-qr" id="print-qr"></div>
+      <div class="tag-info">
+        <p class="name">${escapeHtml(tool.name)}</p>
+        <p class="code">${escapeHtml(tool.code)}</p>
+        <p class="cat">${escapeHtml(tool.category || '')}</p>
+      </div>
+    </div>`;
+  new QRCode(document.getElementById('print-qr'), { text: tool.code, width: 140, height: 140 });
+  setTimeout(() => window.print(), 200);
+}
+
+/* ---------- Registrar préstamo (flujo simple: 1 sola pantalla) ---------- */
+function openLoanModal(tool){
+  const teamOptions = state.team.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>Registrar préstamo</h3>
+    <p style="font-size:13px; color:var(--text-dim); margin:2px 0 4px;">${escapeHtml(tool.name)} · <span class="mono">${escapeHtml(tool.code)}</span></p>
+
+    <label>¿Quién presta? (equipo del proyecto)</label>
+    <select id="ln-lender-select">
+      <option value="">— Selecciona —</option>
+      ${teamOptions}
+    </select>
+    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Ajustes o añade a alguien en Equipo.</p>' : ''}
+
+    <label>¿A quién se le presta?</label>
+    <input id="ln-borrower-name" placeholder="Nombre de quien la recibe">
+    <input id="ln-borrower-email" type="email" placeholder="Correo (para avisarle si se vence)" style="margin-top:8px;">
+
+    <label>Fecha límite de devolución</label>
+    <input id="ln-duedate" type="date" value="${addDaysISO(3)}">
+
+    <div style="margin-top:18px;">
+      <button class="btn btn-solid" onclick="submitLoan('${tool.id}')">Confirmar préstamo</button>
+    </div>
+  `);
+  const sel = document.getElementById('ln-lender-select');
+  const match = state.team.find(t => t.email && MY_EMAIL && t.email === MY_EMAIL);
+  if(match) sel.value = match.id;
+}
+
+async function submitLoan(toolId){
+  const tool = state.tools.find(t => t.id === toolId);
+  const lenderId = document.getElementById('ln-lender-select').value;
+  const lenderMember = state.team.find(t => t.id === lenderId);
+  const borrowerName = document.getElementById('ln-borrower-name').value.trim();
+  const borrowerEmail = document.getElementById('ln-borrower-email').value.trim();
+  const dueDate = document.getElementById('ln-duedate').value;
+
+  if(!lenderMember){ showToast('Selecciona quién presta'); return; }
+  if(!borrowerName || !dueDate){ showToast('Completa el nombre de quien recibe y la fecha límite'); return; }
+  if(!borrowerEmail){ showToast('Se registró sin correo: no se podrá avisar automáticamente si se vence'); }
+
+  try{
+    state = await callApi('registerLoan', {
+      toolId: tool.id, toolName: tool.name,
+      borrowerName, borrowerEmail,
+      lenderId: lenderMember.id, lenderName: lenderMember.name,
+      loanDate: todayISO(), expectedReturnDate: dueDate
+    });
+    closeModal();
+    renderAll();
+    showToast('Préstamo registrado ✓');
+  }catch(e){ showToast(e.message); }
+}
+
+/* ---------- Registrar devolución ---------- */
+function openReturnModal(tool){
+  const loan = state.loans.find(l => l.id === tool.currentLoanId);
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>${escapeHtml(tool.name)}</h3>
+    ${loan ? `
+      <p style="font-size:13px; color:var(--text-dim); line-height:1.6;">
+        Prestada a <b style="color:var(--text)">${escapeHtml(loan.borrowerName)}</b><br>
+        Por: ${escapeHtml(loan.lenderName)}<br>
+        Desde: ${loan.loanDate} · Límite: ${loan.expectedReturnDate}
+      </p>
+    ` : ''}
+    <div style="margin-top:16px;">
+      <button class="btn btn-success" onclick="submitReturn('${loan ? loan.id : ''}')">✓ Marcar como devuelta</button>
+    </div>
+  `);
+}
+
+async function submitReturn(loanId){
+  if(!loanId){ closeModal(); return; }
+  try{
+    state = await callApi('registerReturn', { loanId, returnDate: todayISO() });
+    closeModal();
+    renderAll();
+    showToast('Devolución registrada ✓');
+  }catch(e){ showToast(e.message); }
+}
+
+/* ---------- Equipo ---------- */
+function openAddTeamModal(){
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>Añadir persona</h3>
+    <label>Nombre</label>
+    <input id="tm-name" placeholder="Nombre completo">
+    <label>Correo (para avisos automáticos)</label>
+    <input id="tm-email" type="email" placeholder="correo@ejemplo.com">
+    <label>Teléfono (opcional)</label>
+    <input id="tm-phone" placeholder="Ej: 3001234567">
+    <div style="margin-top:18px;">
+      <button class="btn btn-solid" onclick="submitAddTeam()">Guardar</button>
+    </div>
+  `);
+}
+
+async function submitAddTeam(){
+  const name = document.getElementById('tm-name').value.trim();
+  const email = document.getElementById('tm-email').value.trim();
+  const phone = document.getElementById('tm-phone').value.trim();
+  if(!name){ showToast('El nombre es obligatorio'); return; }
+  try{
+    state = await callApi('addTeamMember', { name, email, phone });
+    closeModal();
+    renderAll();
+  }catch(e){ showToast(e.message); }
+}
+
+async function removeTeamMember(id){
+  if(!confirm('¿Eliminar a esta persona?')) return;
+  try{ state = await callApi('deleteTeamMember', { id }); renderAll(); }catch(e){ showToast(e.message); }
+}
+
+async function removeTool(id){
+  if(!confirm('¿Eliminar esta herramienta del inventario?')) return;
+  try{ state = await callApi('deleteTool', { id }); renderAll(); }catch(e){ showToast(e.message); }
+}
+
+/* ============================================================
+   RENDER
+============================================================ */
+function renderAll(){
+  renderSetupWarning();
+  renderTools();
+  renderLoans();
+  renderTeam();
+}
+
+function renderTools(){
+  const el = document.getElementById('tools-list');
+  if(!state.tools.length){
+    el.innerHTML = `<div class="empty-state"><span class="eyebrow">Vacío</span>Aún no has añadido herramientas.</div>`;
+    return;
+  }
+  el.innerHTML = state.tools.map(t => {
+    const statusLabel = t.status === 'available' ? 'Disponible' : 'Prestada';
+    const statusClass = t.status === 'available' ? 'status-available' : 'status-loaned';
+    return `
+    <div class="panel" style="display:flex; align-items:center; gap:12px;">
+      <div class="tag-qr" style="background:#fff;" id="mini-qr-${t.id}"></div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600; font-size:14.5px;">${escapeHtml(t.name)}</div>
+        <div class="mono" style="font-size:11px; color:var(--text-dim);">${escapeHtml(t.code)}</div>
+        <span class="status-chip ${statusClass}" style="margin-top:6px;">${statusLabel}</span>
+      </div>
+      <button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="removeTool('${t.id}')">🗑</button>
+    </div>`;
+  }).join('');
+  state.tools.forEach(t => {
+    const c = document.getElementById('mini-qr-' + t.id);
+    if(c) new QRCode(c, { text: t.code, width: 44, height: 44 });
+  });
+}
+
+function renderLoans(){
+  const active = state.loans.filter(l => !l.returnDate);
+  const summary = document.getElementById('loans-summary');
+  const overdueCount = active.filter(l => daysBetween(l.expectedReturnDate, todayISO()) > 0).length;
+  if(active.length){
+    summary.style.display = 'block';
+    summary.innerHTML = `
+      <div class="eyebrow">Resumen</div>
+      <div style="display:flex; gap:18px; margin-top:8px;">
+        <div><div style="font-size:22px; font-weight:700;">${active.length}</div><div style="font-size:11px; color:var(--text-dim);">Préstamos activos</div></div>
+        <div><div style="font-size:22px; font-weight:700; color:${overdueCount ? 'var(--danger)' : 'var(--success)'}">${overdueCount}</div><div style="font-size:11px; color:var(--text-dim);">Vencidos</div></div>
+      </div>`;
+  } else {
+    summary.style.display = 'none';
+  }
+
+  const sorted = [...active].sort((a,b) => daysBetween(b.expectedReturnDate, todayISO()) - daysBetween(a.expectedReturnDate, todayISO()));
+  const el = document.getElementById('loans-list');
+  if(!sorted.length){
+    el.innerHTML = `<div class="empty-state"><span class="eyebrow">Todo en orden</span>No hay préstamos activos.</div>`;
+    return;
+  }
+  el.innerHTML = sorted.map(l => {
+    const diff = daysBetween(l.expectedReturnDate, todayISO());
+    let chip, chipClass;
+    if(diff > 0){ chip = `Vencido hace ${diff} día(s)`; chipClass = 'status-overdue'; }
+    else if(diff === 0){ chip = 'Vence hoy'; chipClass = 'status-loaned'; }
+    else { chip = `En plazo (${-diff} día(s) restantes)`; chipClass = 'status-available'; }
+    return `
+    <div class="panel">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+          <div style="font-weight:600; font-size:14.5px;">${escapeHtml(l.toolName)}</div>
+          <div style="font-size:12.5px; color:var(--text-dim); margin-top:2px;">
+            A <b style="color:var(--text)">${escapeHtml(l.borrowerName)}</b> · por ${escapeHtml(l.lenderName)}
+          </div>
+          <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Límite: ${l.expectedReturnDate}${!l.borrowerEmail ? ' · <span style="color:var(--warn)">sin correo registrado</span>' : ''}</div>
+        </div>
+        <span class="status-chip ${chipClass}">${chip}</span>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-success" onclick="submitReturn('${l.id}')">✓ Marcar como devuelta</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderTeam(){
+  const el = document.getElementById('team-list');
+  if(!state.team.length){
+    el.innerHTML = `<div class="empty-state"><span class="eyebrow">Vacío</span>Aún no has añadido personas del equipo.</div>`;
+    return;
+  }
+  el.innerHTML = state.team.map(t => `
+    <div class="panel" style="display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <div style="font-weight:600; font-size:14.5px;">${escapeHtml(t.name)}</div>
+        <div style="font-size:12px; color:var(--text-dim);">${escapeHtml(t.email || 'sin correo — no recibirá avisos')}</div>
+      </div>
+      <button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="removeTeamMember('${t.id}')">🗑</button>
+    </div>
+  `).join('');
+}
+
+/* ============================================================
+   INICIO
+============================================================ */
+renderSetupWarning();
+if(API_URL) loadData();
+</script>
+</body>
+</html>
