@@ -442,7 +442,9 @@ function daysBetween(a, b){
 
 function formatDatePretty(iso){
   if(!iso) return '';
-  const d = new Date(iso + 'T00:00:00');
+  const datePart = String(iso).slice(0, 10);
+  const d = new Date(datePart + 'T00:00:00');
+  if(isNaN(d.getTime())) return String(iso);
   return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
@@ -482,9 +484,9 @@ function handleScannedCode(code){
   if(!tool){
     document.getElementById('scan-recent').innerHTML = `
       <p style="font-size:13px; color:var(--text-dim); margin:0 0 10px;">
-        El código <span class="mono">${escapeHtml(code)}</span> no está registrado todavía.
+        Ese código no pertenece a ninguna herramienta registrada. Si es una herramienta nueva, no necesitas escanear nada: ve a <b>Inventario</b> y usa "+ Añadir herramienta" — la app le genera un código QR nuevo para que lo imprimas y lo pegues.
       </p>
-      <button class="btn btn-solid" onclick="openAddToolModal('${escapeHtml(code)}')">Registrar esta herramienta</button>
+      <button class="btn btn-solid" onclick="switchTab('tools')">Ir a Inventario</button>
     `;
     return;
   }
