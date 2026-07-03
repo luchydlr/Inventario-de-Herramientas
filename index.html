@@ -252,6 +252,7 @@
     <!-- ===================== ESCANEAR ===================== -->
     <section class="tab active" id="tab-scan">
       <div id="setup-warning"></div>
+      <div id="scan-readiness-warning"></div>
       <div class="panel" style="text-align:center; padding:28px 16px;">
         <h2 style="font-size:16px; margin-bottom:6px;">Escanea el código</h2>
         <p style="color:var(--text-dim); font-size:13px; margin:0 0 18px;">
@@ -453,6 +454,8 @@ function formatDatePretty(iso){
 ============================================================ */
 function startScanner(){
   if(!API_URL){ switchTab('settings'); showToast('Configura primero la URL del backend'); return; }
+  if(!state.tools.length){ switchTab('tools'); showToast('Primero añade una herramienta en Inventario'); return; }
+  if(!state.team.length){ switchTab('team'); showToast('Primero añade a alguien en Equipo (o regístrate en Ajustes)'); return; }
   document.getElementById('scanner-modal').classList.add('show');
   html5QrCode = new Html5Qrcode("reader");
   html5QrCode.start(
@@ -558,6 +561,27 @@ function openTagPreview(tool){
   new QRCode(document.getElementById('preview-qr'), { text: tool.code, width: 120, height: 120 });
 }
 
+function reprintTag(toolId){
+  const tool = state.tools.find(t => t.id === toolId);
+  if(!tool) return;
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>${escapeHtml(tool.name)}</h3>
+    <p style="font-size:12.5px; color:var(--text-dim); margin:2px 0 14px;">¿Se perdió o dañó la etiqueta? Vuelve a imprimirla aquí.</p>
+    <div class="tag-card" style="margin-bottom:14px;">
+      <div class="tag-hole"></div>
+      <div class="tag-qr" id="reprint-qr"></div>
+      <div class="tag-info">
+        <p class="name">${escapeHtml(tool.name)}</p>
+        <p class="code">${escapeHtml(tool.code)}</p>
+        <p class="cat">${escapeHtml(tool.category || '')}</p>
+      </div>
+    </div>
+    <button class="btn btn-solid" onclick='printTag(${JSON.stringify(tool)})'>🖨 Reimprimir etiqueta</button>
+  `);
+  new QRCode(document.getElementById('reprint-qr'), { text: tool.code, width: 120, height: 120 });
+}
+
 function printTag(tool){
   const area = document.getElementById('print-area');
   area.innerHTML = `
@@ -581,27 +605,41 @@ function openLoanModal(tool){
     <h3>Registrar préstamo</h3>
     <p style="font-size:13px; color:var(--text-dim); margin:2px 0 4px;">${escapeHtml(tool.name)} · <span class="mono">${escapeHtml(tool.code)}</span></p>
 
-    <label>¿Quién presta? (equipo del proyecto)</label>
-    <select id="ln-lender-select">
+    <label>¿Quién presta? (equipo del proyecto) *</label>
+    <select id="ln-lender-select" oninput="updateLoanButtonState()">
       <option value="">— Selecciona —</option>
       ${teamOptions}
     </select>
-    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Registro o añade a alguien en Equipo.</p>' : ''}
+    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Ajustes o añade a alguien en Equipo.</p>' : ''}
 
-    <label>¿A quién se le presta?</label>
-    <input id="ln-borrower-name" placeholder="Nombre de quien la recibe">
-    <input id="ln-borrower-email" type="email" placeholder="Correo" style="margin-top:8px;">
+    <label>¿A quién se le presta? *</label>
+    <input id="ln-borrower-name" placeholder="Nombre de quien la recibe" oninput="updateLoanButtonState()">
+    <input id="ln-borrower-email" type="email" placeholder="Correo (recomendado, para avisarle si se vence)" style="margin-top:8px;">
 
-    <label>Fecha límite de devolución</label>
-    <input id="ln-duedate" type="date" value="${addDaysISO(3)}">
+    <label>Fecha límite de devolución *</label>
+    <input id="ln-duedate" type="date" value="${addDaysISO(3)}" oninput="updateLoanButtonState()">
 
+    <p class="field-hint">* Campos obligatorios</p>
     <div style="margin-top:18px;">
-      <button class="btn btn-solid" onclick="submitLoan('${tool.id}')">Confirmar préstamo</button>
+      <button class="btn btn-solid" id="ln-confirm-btn" disabled style="opacity:.45; cursor:not-allowed;" onclick="submitLoan('${tool.id}')">Confirmar préstamo</button>
     </div>
   `);
   const sel = document.getElementById('ln-lender-select');
   const match = state.team.find(t => t.email && MY_EMAIL && t.email === MY_EMAIL);
   if(match) sel.value = match.id;
+  updateLoanButtonState();
+}
+
+function updateLoanButtonState(){
+  const btn = document.getElementById('ln-confirm-btn');
+  if(!btn) return;
+  const lenderOk = document.getElementById('ln-lender-select').value !== '';
+  const borrowerOk = document.getElementById('ln-borrower-name').value.trim() !== '';
+  const dateOk = document.getElementById('ln-duedate').value !== '';
+  const ready = lenderOk && borrowerOk && dateOk;
+  btn.disabled = !ready;
+  btn.style.opacity = ready ? '1' : '.45';
+  btn.style.cursor = ready ? 'pointer' : 'not-allowed';
 }
 
 async function submitLoan(toolId){
@@ -707,6 +745,18 @@ function renderAll(){
   renderTeam();
 }
 
+function renderScanReadiness(){
+  const el = document.getElementById('scan-readiness-warning');
+  if(!el) return;
+  if(!state.tools.length){
+    el.innerHTML = `<div class="banner banner-info">👋 Primero añade tu primera herramienta en <b>Inventario</b> — ahí la app te genera el código QR para imprimir.</div>`;
+  } else if(!state.team.length){
+    el.innerHTML = `<div class="banner banner-info">👋 Regístrate en <b>Ajustes</b> (o añade a alguien en <b>Equipo</b>) para poder elegir quién presta.</div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
 function renderTools(){
   const el = document.getElementById('tools-list');
   if(!state.tools.length){
@@ -717,14 +767,14 @@ function renderTools(){
     const statusLabel = t.status === 'available' ? 'Disponible' : 'Prestada';
     const statusClass = t.status === 'available' ? 'status-available' : 'status-loaned';
     return `
-    <div class="panel" style="display:flex; align-items:center; gap:12px;">
+    <div class="panel" style="display:flex; align-items:center; gap:12px; cursor:pointer;" onclick="reprintTag('${t.id}')">
       <div class="tag-qr" style="background:#fff;" id="mini-qr-${t.id}"></div>
       <div style="flex:1; min-width:0;">
         <div style="font-weight:600; font-size:14.5px;">${escapeHtml(t.name)}</div>
         <div class="mono" style="font-size:11px; color:var(--text-dim);">${escapeHtml(t.code)}</div>
         <span class="status-chip ${statusClass}" style="margin-top:6px;">${statusLabel}</span>
       </div>
-      <button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="removeTool('${t.id}')">🗑</button>
+      <button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="event.stopPropagation(); removeTool('${t.id}')">🗑</button>
     </div>`;
   }).join('');
   state.tools.forEach(t => {
