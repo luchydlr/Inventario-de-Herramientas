@@ -353,7 +353,7 @@ async function saveSettings(){
   MY_NAME = document.getElementById('settings-myname').value.trim();
   MY_EMAIL = document.getElementById('settings-myemail').value.trim();
   MY_PHONE = document.getElementById('settings-myphone').value.trim();
-  if(!MY_NAME){ showToast('Escribe tu nombre'); return; }
+  if(!MY_NAME || !MY_EMAIL || !MY_PHONE){ showToast('Completa todos los campos'); return; }
   localStorage.setItem('toolwatch_my_name', MY_NAME);
   localStorage.setItem('toolwatch_my_email', MY_EMAIL);
   localStorage.setItem('toolwatch_my_phone', MY_PHONE);
@@ -449,6 +449,14 @@ function formatDatePretty(iso){
   return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function formatDateTimePretty(iso){
+  if(!iso) return '';
+  const s = String(iso);
+  const d = new Date(s.length > 10 ? s : s + 'T00:00:00');
+  if(isNaN(d.getTime())) return s;
+  return d.toLocaleString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+} 
+
 /* ============================================================
    ESCÁNER
 ============================================================ */
@@ -517,16 +525,27 @@ function openAddToolModal(prefillCode){
   openModal(`
     <button class="modal-close-x" onclick="closeModal()">✕</button>
     <h3>Nueva herramienta</h3>
-    <label>Nombre</label>
-    <input id="nt-name" placeholder="Ej: Taladro Bosch">
+    <label>Nombre *</label>
+    <input id="nt-name" placeholder="Ej: Taladro Bosch" oninput="updateToolButtonState()">
     <label>Ubicación (opcional)</label>
-    <input id="nt-cat" placeholder="Ej: ESW 4">
-    <label>Código</label>
-    <input id="nt-code" value="${escapeHtml(code)}" class="mono">
+    <input id="nt-cat" placeholder="Ej: Bodega 2">
+    <label>Código (generado automáticamente)</label>
+    <input id="nt-code" value="${escapeHtml(code)}" class="mono" readonly style="opacity:.6; cursor:not-allowed;">
+    <p class="field-hint">* Campo obligatorio</p>
     <div style="margin-top:18px;">
-      <button class="btn btn-solid" onclick="submitAddTool()">Guardar y generar etiqueta</button>
+      <button class="btn btn-solid" id="nt-confirm-btn" disabled style="opacity:.45; cursor:not-allowed;" onclick="submitAddTool()">Guardar y generar etiqueta</button>
     </div>
   `);
+  updateToolButtonState();
+}
+
+function updateToolButtonState(){
+  const btn = document.getElementById('nt-confirm-btn');
+  if(!btn) return;
+  const ready = document.getElementById('nt-name').value.trim() !== '';
+  btn.disabled = !ready;
+  btn.style.opacity = ready ? '1' : '.45';
+  btn.style.cursor = ready ? 'pointer' : 'not-allowed';
 }
 
 async function submitAddTool(){
@@ -617,7 +636,7 @@ function openLoanModal(tool){
     <input id="ln-borrower-email" type="email" placeholder="Correo (recomendado, para avisarle si se vence)" style="margin-top:8px;">
 
     <label>Fecha límite de devolución *</label>
-    <input id="ln-duedate" type="date" value="${addDaysISO(3)}" oninput="updateLoanButtonState()">
+    <input id="ln-duedate" type="date" min="${todayISO()}" value="${addDaysISO(3)}" oninput="updateLoanButtonState()">
 
     <p class="field-hint">* Campos obligatorios</p>
     <div style="margin-top:18px;">
@@ -635,11 +654,18 @@ function updateLoanButtonState(){
   if(!btn) return;
   const lenderOk = document.getElementById('ln-lender-select').value !== '';
   const borrowerOk = document.getElementById('ln-borrower-name').value.trim() !== '';
-  const dateOk = document.getElementById('ln-duedate').value !== '';
+  const dueDateVal = document.getElementById('ln-duedate').value;
+  const dateOk = dueDateVal !== '' && dueDateVal >= todayISO();
   const ready = lenderOk && borrowerOk && dateOk;
   btn.disabled = !ready;
   btn.style.opacity = ready ? '1' : '.45';
   btn.style.cursor = ready ? 'pointer' : 'not-allowed';
+}
+
+function nowLocalDateTime(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
 }
 
 async function submitLoan(toolId){
@@ -652,6 +678,7 @@ async function submitLoan(toolId){
 
   if(!lenderMember){ showToast('Selecciona quién presta'); return; }
   if(!borrowerName || !dueDate){ showToast('Completa el nombre de quien recibe y la fecha límite'); return; }
+  if(dueDate < todayISO()){ showToast('La fecha límite no puede ser anterior a hoy'); return; }
   if(!borrowerEmail){ showToast('Se registró sin correo: no se podrá avisar automáticamente si se vence'); }
 
   try{
@@ -659,7 +686,7 @@ async function submitLoan(toolId){
       toolId: tool.id, toolName: tool.name,
       borrowerName, borrowerEmail,
       lenderId: lenderMember.id, lenderName: lenderMember.name,
-      loanDate: todayISO(), expectedReturnDate: dueDate
+      loanDate: nowLocalDateTime(), expectedReturnDate: dueDate
     });
     closeModal();
     renderAll();
@@ -677,7 +704,7 @@ function openReturnModal(tool){
       <p style="font-size:13px; color:var(--text-dim); line-height:1.6;">
         Prestada a <b style="color:var(--text)">${escapeHtml(loan.borrowerName)}</b><br>
         Por: ${escapeHtml(loan.lenderName)}<br>
-        Desde: ${formatDatePretty(loan.loanDate)} · Límite: ${formatDatePretty(loan.expectedReturnDate)}
+        Desde: ${formatDateTimePretty(loan.loanDate)} · Límite: ${formatDatePretty(loan.expectedReturnDate)}
       </p>
     ` : ''}
     <div style="margin-top:16px;">
@@ -701,23 +728,36 @@ function openAddTeamModal(){
   openModal(`
     <button class="modal-close-x" onclick="closeModal()">✕</button>
     <h3>Añadir persona</h3>
-    <label>Nombre</label>
-    <input id="tm-name" placeholder="Nombre completo">
-    <label>Correo (para avisos automáticos)</label>
-    <input id="tm-email" type="email" placeholder="correo@ejemplo.com">
-    <label>Teléfono (opcional)</label>
-    <input id="tm-phone" placeholder="Ej: 3001234567">
+    <label>Nombre *</label>
+    <input id="tm-name" placeholder="Nombre completo" oninput="updateTeamButtonState()">
+    <label>Correo (para avisos automáticos) *</label>
+    <input id="tm-email" type="email" placeholder="correo@ejemplo.com" oninput="updateTeamButtonState()">
+    <label>Teléfono *</label>
+    <input id="tm-phone" placeholder="Ej: 3001234567" oninput="updateTeamButtonState()">
+    <p class="field-hint">* Campos obligatorios</p>
     <div style="margin-top:18px;">
-      <button class="btn btn-solid" onclick="submitAddTeam()">Guardar</button>
+      <button class="btn btn-solid" id="tm-confirm-btn" disabled style="opacity:.45; cursor:not-allowed;" onclick="submitAddTeam()">Guardar</button>
     </div>
   `);
+  updateTeamButtonState();
+}
+
+function updateTeamButtonState(){
+  const btn = document.getElementById('tm-confirm-btn');
+  if(!btn) return;
+  const ready = document.getElementById('tm-name').value.trim() !== ''
+    && document.getElementById('tm-email').value.trim() !== ''
+    && document.getElementById('tm-phone').value.trim() !== '';
+  btn.disabled = !ready;
+  btn.style.opacity = ready ? '1' : '.45';
+  btn.style.cursor = ready ? 'pointer' : 'not-allowed';
 }
 
 async function submitAddTeam(){
   const name = document.getElementById('tm-name').value.trim();
   const email = document.getElementById('tm-email').value.trim();
   const phone = document.getElementById('tm-phone').value.trim();
-  if(!name){ showToast('El nombre es obligatorio'); return; }
+  if(!name || !email || !phone){ showToast('Completa todos los campos'); return; }
   try{
     state = await callApi('addTeamMember', { name, email, phone });
     closeModal();
