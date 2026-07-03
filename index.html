@@ -253,7 +253,6 @@
     <section class="tab active" id="tab-scan">
       <div id="setup-warning"></div>
       <div class="panel" style="text-align:center; padding:28px 16px;">
-        <div class="eyebrow" style="margin-bottom:10px;">Paso 1</div>
         <h2 style="font-size:16px; margin-bottom:6px;">Escanea el código</h2>
         <p style="color:var(--text-dim); font-size:13px; margin:0 0 18px;">
           Apunta la cámara a la etiqueta QR de la herramienta para prestarla o registrarla como devuelta.
@@ -283,7 +282,7 @@
     <!-- ===================== EQUIPO ===================== -->
     <section class="tab" id="tab-team">
       <div class="banner banner-info">
-        👷 Aquí se registra el equipo del proyecto (quienes prestan las herramientas). Las personas externas que reciben una herramienta no necesitan estar aquí — su correo se pide directo al registrar el préstamo.
+        👷 Registro del equipo del proyecto (quienes prestan las herramientas). Las personas externas que reciben una herramienta no necesitan estar aquí — su correo se pide directo al registrar el préstamo.
       </div>
       <div class="btn-row" style="margin-bottom:14px;">
         <button class="btn btn-solid" onclick="openAddTeamModal()">+ Añadir persona</button>
@@ -296,7 +295,7 @@
       <div class="panel">
         <div class="eyebrow" style="margin-bottom:4px;">Mi registro</div>
         <p style="font-size:12.5px; color:var(--text-dim); margin:2px 0 4px;">
-          Regístrate para aparecer en la lista de "quién presta" al registrar un préstamo.
+          Regístrate para aparecer en la lista de "equipo" al registrar un préstamo.
         </p>
         <label>Nombre</label>
         <input id="settings-myname" placeholder="Tu nombre">
@@ -316,7 +315,7 @@
     <button data-tab="tools" onclick="switchTab('tools')"><span class="dot"></span>Inventario</button>
     <button data-tab="loans" onclick="switchTab('loans')"><span class="dot"></span>Préstamos</button>
     <button data-tab="team" onclick="switchTab('team')"><span class="dot"></span>Equipo</button>
-    <button data-tab="settings" onclick="switchTab('settings')"><span class="dot"></span>Ajustes</button>
+    <button data-tab="settings" onclick="switchTab('settings')"><span class="dot"></span>Registro</button>
   </nav>
 </div>
 
@@ -383,7 +382,7 @@ function renderSetupWarning(){
    API
 ============================================================ */
 async function callApi(action, payload){
-  if(!API_URL){ showToast('Configura la URL en Ajustes primero'); throw new Error('sin API_URL'); }
+  if(!API_URL){ showToast('Configura la URL primero'); throw new Error('sin API_URL'); }
   const res = await fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -439,6 +438,12 @@ function daysBetween(a, b){
   const A = new Date(a); A.setHours(0,0,0,0);
   const B = new Date(b); B.setHours(0,0,0,0);
   return Math.round((B - A) / 86400000);
+}
+
+function formatDatePretty(iso){
+  if(!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 /* ============================================================
@@ -509,8 +514,8 @@ function openAddToolModal(prefillCode){
     <h3>Nueva herramienta</h3>
     <label>Nombre</label>
     <input id="nt-name" placeholder="Ej: Taladro Bosch">
-    <label>Categoría (opcional)</label>
-    <input id="nt-cat" placeholder="Ej: Eléctrica">
+    <label>Ubicación (opcional)</label>
+    <input id="nt-cat" placeholder="Ej: ESW 4">
     <label>Código</label>
     <input id="nt-code" value="${escapeHtml(code)}" class="mono">
     <div style="margin-top:18px;">
@@ -543,7 +548,6 @@ function openTagPreview(tool){
       <div class="tag-qr" id="preview-qr"></div>
       <div class="tag-info">
         <p class="name">${escapeHtml(tool.name)}</p>
-        <p class="code">${escapeHtml(tool.code)}</p>
         <p class="cat">${escapeHtml(tool.category || '')}</p>
       </div>
     </div>
@@ -560,7 +564,6 @@ function printTag(tool){
       <div class="tag-qr" id="print-qr"></div>
       <div class="tag-info">
         <p class="name">${escapeHtml(tool.name)}</p>
-        <p class="code">${escapeHtml(tool.code)}</p>
         <p class="cat">${escapeHtml(tool.category || '')}</p>
       </div>
     </div>`;
@@ -581,11 +584,11 @@ function openLoanModal(tool){
       <option value="">— Selecciona —</option>
       ${teamOptions}
     </select>
-    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Ajustes o añade a alguien en Equipo.</p>' : ''}
+    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Registro o añade a alguien en Equipo.</p>' : ''}
 
     <label>¿A quién se le presta?</label>
     <input id="ln-borrower-name" placeholder="Nombre de quien la recibe">
-    <input id="ln-borrower-email" type="email" placeholder="Correo (para avisarle si se vence)" style="margin-top:8px;">
+    <input id="ln-borrower-email" type="email" placeholder="Correo" style="margin-top:8px;">
 
     <label>Fecha límite de devolución</label>
     <input id="ln-duedate" type="date" value="${addDaysISO(3)}">
@@ -634,7 +637,7 @@ function openReturnModal(tool){
       <p style="font-size:13px; color:var(--text-dim); line-height:1.6;">
         Prestada a <b style="color:var(--text)">${escapeHtml(loan.borrowerName)}</b><br>
         Por: ${escapeHtml(loan.lenderName)}<br>
-        Desde: ${loan.loanDate} · Límite: ${loan.expectedReturnDate}
+        Desde: ${formatDatePretty(loan.loanDate)} · Límite: ${formatDatePretty(loan.expectedReturnDate)}
       </p>
     ` : ''}
     <div style="margin-top:16px;">
@@ -764,7 +767,7 @@ function renderLoans(){
           <div style="font-size:12.5px; color:var(--text-dim); margin-top:2px;">
             A <b style="color:var(--text)">${escapeHtml(l.borrowerName)}</b> · por ${escapeHtml(l.lenderName)}
           </div>
-          <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Límite: ${l.expectedReturnDate}${!l.borrowerEmail ? ' · <span style="color:var(--warn)">sin correo registrado</span>' : ''}</div>
+          <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Límite: ${formatDatePretty(l.expectedReturnDate)}${!l.borrowerEmail ? ' · <span style="color:var(--warn)">sin correo registrado</span>' : ''}</div>
         </div>
         <span class="status-chip ${chipClass}">${chip}</span>
       </div>
