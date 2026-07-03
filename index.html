@@ -501,11 +501,30 @@ function handleScannedCode(code){
     `;
     return;
   }
-  if(tool.status === 'available'){
-    openLoanModal(tool);
-  } else {
-    openReturnModal(tool);
+  openToolActionModal(tool.id);
+}
+
+function openToolActionModal(toolId){
+  const tool = state.tools.find(t => t.id === toolId);
+  if(!tool) return;
+  const available = Number(tool.available);
+  const quantity = Number(tool.quantity);
+  const activeLoans = state.loans.filter(l => l.toolId === toolId && !l.returnDate);
+  let body = `
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>${escapeHtml(tool.name)}</h3>
+    <p style="font-size:13px; color:var(--text-dim); margin:2px 0 16px;">Disponibles: <b style="color:var(--text)">${available}</b> de ${quantity}</p>
+  `;
+  if(available > 0){
+    body += `<button class="btn btn-solid" style="margin-bottom:10px;" onclick="openLoanModal('${tool.id}')">📤 Prestar</button>`;
   }
+  if(activeLoans.length){
+    body += `<button class="btn btn-success" onclick="openReturnPicker('${tool.id}')">📥 Registrar devolución</button>`;
+  }
+  if(available === 0 && !activeLoans.length){
+    body += `<p style="font-size:13px; color:var(--text-dim);">No hay unidades disponibles ni préstamos activos registrados.</p>`;
+  }
+  openModal(body);
 }
 
 /* ============================================================
@@ -527,8 +546,10 @@ function openAddToolModal(prefillCode){
     <h3>Nueva herramienta</h3>
     <label>Nombre *</label>
     <input id="nt-name" placeholder="Ej: Taladro Bosch" oninput="updateToolButtonState()">
-    <label>Ubicación (opcional)</label>
-    <input id="nt-cat" placeholder="Ej: Bodega 2">
+    <label>Ubicación *</label>
+    <input id="nt-cat" placeholder="Ej: Bodega 2" oninput="updateToolButtonState()">
+    <label>Cantidad *</label>
+    <input id="nt-cant" type="number" min="1" placeholder="Ej: 1" oninput="updateToolButtonState()">
     <label>Código (generado automáticamente)</label>
     <input id="nt-code" value="${escapeHtml(code)}" class="mono" readonly style="opacity:.6; cursor:not-allowed;">
     <p class="field-hint">* Campo obligatorio</p>
@@ -542,7 +563,11 @@ function openAddToolModal(prefillCode){
 function updateToolButtonState(){
   const btn = document.getElementById('nt-confirm-btn');
   if(!btn) return;
-  const ready = document.getElementById('nt-name').value.trim() !== '';
+  const nameOk = document.getElementById('nt-name').value.trim() !== '';
+  const catOk = document.getElementById('nt-cat').value.trim() !== '';
+  const cantVal = Number(document.getElementById('nt-cant').value);
+  const cantOk = cantVal >= 1;
+  const ready = nameOk && catOk && cantOk;
   btn.disabled = !ready;
   btn.style.opacity = ready ? '1' : '.45';
   btn.style.cursor = ready ? 'pointer' : 'not-allowed';
@@ -551,10 +576,11 @@ function updateToolButtonState(){
 async function submitAddTool(){
   const name = document.getElementById('nt-name').value.trim();
   const cat = document.getElementById('nt-cat').value.trim();
+  const cant = Number(document.getElementById('nt-cant').value) || 0;
   const code = document.getElementById('nt-code').value.trim();
-  if(!name || !code){ showToast('Nombre y código son obligatorios'); return; }
+  if(!name || !cat || !code || cant < 1){ showToast('Llena todos los campos'); return; }
   try{
-    state = await callApi('addTool', { name, category: cat, code });
+    state = await callApi('addTool', { name, category: cat, quantity: cant, code });
     closeModal();
     renderAll();
     const tool = state.tools.find(t => t.code === code);
@@ -617,7 +643,10 @@ function printTag(tool){
 }
 
 /* ---------- Registrar préstamo (flujo simple: 1 sola pantalla) ---------- */
-function openLoanModal(tool){
+function openLoanModal(toolId){
+  const tool = state.tools.find(t => t.id === toolId);
+  if(!tool) return;
+  const available = Number(tool.available);
   const teamOptions = state.team.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
   openModal(`
     <button class="modal-close-x" onclick="closeModal()">✕</button>
@@ -633,7 +662,11 @@ function openLoanModal(tool){
 
     <label>¿A quién se le presta? *</label>
     <input id="ln-borrower-name" placeholder="Nombre de quien la recibe" oninput="updateLoanButtonState()">
-    <input id="ln-borrower-email" type="email" placeholder="Correo (recomendado, para avisarle si se vence)" style="margin-top:8px;">
+    <label>Correo de quien recibe *</label>
+    <input id="ln-borrower-email" type="email" placeholder="Para avisarle si se vence" oninput="updateLoanButtonState()">
+
+    <label>Cantidad a prestar * (disponibles: ${available})</label>
+    <input id="ln-quantity" type="number" min="1" max="${available}" value="1" oninput="updateLoanButtonState()">
 
     <label>Fecha límite de devolución *</label>
     <input id="ln-duedate" type="date" min="${todayISO()}" value="${addDaysISO(3)}" oninput="updateLoanButtonState()">
@@ -654,9 +687,12 @@ function updateLoanButtonState(){
   if(!btn) return;
   const lenderOk = document.getElementById('ln-lender-select').value !== '';
   const borrowerOk = document.getElementById('ln-borrower-name').value.trim() !== '';
+  const emailOk = document.getElementById('ln-borrower-email').value.trim() !== '';
+  const qtyInput = document.getElementById('ln-quantity');
+  const qtyOk = Number(qtyInput.value) >= 1 && Number(qtyInput.value) <= Number(qtyInput.max);
   const dueDateVal = document.getElementById('ln-duedate').value;
   const dateOk = dueDateVal !== '' && dueDateVal >= todayISO();
-  const ready = lenderOk && borrowerOk && dateOk;
+  const ready = lenderOk && borrowerOk && emailOk && qtyOk && dateOk;
   btn.disabled = !ready;
   btn.style.opacity = ready ? '1' : '.45';
   btn.style.cursor = ready ? 'pointer' : 'not-allowed';
@@ -674,17 +710,18 @@ async function submitLoan(toolId){
   const lenderMember = state.team.find(t => t.id === lenderId);
   const borrowerName = document.getElementById('ln-borrower-name').value.trim();
   const borrowerEmail = document.getElementById('ln-borrower-email').value.trim();
+  const quantity = Number(document.getElementById('ln-quantity').value) || 1;
   const dueDate = document.getElementById('ln-duedate').value;
 
   if(!lenderMember){ showToast('Selecciona quién presta'); return; }
-  if(!borrowerName || !dueDate){ showToast('Completa el nombre de quien recibe y la fecha límite'); return; }
+  if(!borrowerName || !borrowerEmail || !dueDate){ showToast('Completa todos los campos'); return; }
   if(dueDate < todayISO()){ showToast('La fecha límite no puede ser anterior a hoy'); return; }
-  if(!borrowerEmail){ showToast('Se registró sin correo: no se podrá avisar automáticamente si se vence'); }
+  if(quantity < 1 || quantity > Number(tool.available)){ showToast('Cantidad inválida'); return; }
 
   try{
     state = await callApi('registerLoan', {
       toolId: tool.id, toolName: tool.name,
-      borrowerName, borrowerEmail,
+      borrowerName, borrowerEmail, quantity,
       lenderId: lenderMember.id, lenderName: lenderMember.name,
       loanDate: nowLocalDateTime(), expectedReturnDate: dueDate
     });
@@ -695,20 +732,39 @@ async function submitLoan(toolId){
 }
 
 /* ---------- Registrar devolución ---------- */
-function openReturnModal(tool){
-  const loan = state.loans.find(l => l.id === tool.currentLoanId);
+function openReturnPicker(toolId){
+  const tool = state.tools.find(t => t.id === toolId);
+  const activeLoans = state.loans.filter(l => l.toolId === toolId && !l.returnDate);
+  if(!tool || !activeLoans.length) return;
+  if(activeLoans.length === 1){
+    openReturnModal(activeLoans[0], tool);
+    return;
+  }
+  const rows = activeLoans.map(l => `
+    <div class="panel" style="margin-bottom:8px;">
+      <div style="font-weight:600; font-size:13.5px;">${escapeHtml(l.borrowerName)} · ${l.quantity || 1} unidad(es)</div>
+      <div style="font-size:11.5px; color:var(--text-dim); margin:2px 0 8px;">Límite: ${formatDatePretty(l.expectedReturnDate)}</div>
+      <button class="btn btn-success" onclick="submitReturn('${l.id}')">✓ Marcar como devuelta</button>
+    </div>`).join('');
   openModal(`
     <button class="modal-close-x" onclick="closeModal()">✕</button>
     <h3>${escapeHtml(tool.name)}</h3>
-    ${loan ? `
-      <p style="font-size:13px; color:var(--text-dim); line-height:1.6;">
-        Prestada a <b style="color:var(--text)">${escapeHtml(loan.borrowerName)}</b><br>
-        Por: ${escapeHtml(loan.lenderName)}<br>
-        Desde: ${formatDateTimePretty(loan.loanDate)} · Límite: ${formatDatePretty(loan.expectedReturnDate)}
-      </p>
-    ` : ''}
+    <p style="font-size:12.5px; color:var(--text-dim); margin:2px 0 12px;">Hay varios préstamos activos. Elige cuál se devuelve:</p>
+    ${rows}
+  `);
+}
+
+function openReturnModal(loan, tool){
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>${escapeHtml(tool.name)}</h3>
+    <p style="font-size:13px; color:var(--text-dim); line-height:1.6;">
+      Prestada a <b style="color:var(--text)">${escapeHtml(loan.borrowerName)}</b> (${loan.quantity || 1} unidad${(loan.quantity||1) > 1 ? 'es' : ''})<br>
+      Por: ${escapeHtml(loan.lenderName)}<br>
+      Desde: ${formatDateTimePretty(loan.loanDate)} · Límite: ${formatDatePretty(loan.expectedReturnDate)}
+    </p>
     <div style="margin-top:16px;">
-      <button class="btn btn-success" onclick="submitReturn('${loan ? loan.id : ''}')">✓ Marcar como devuelta</button>
+      <button class="btn btn-success" onclick="submitReturn('${loan.id}')">✓ Marcar como devuelta</button>
     </div>
   `);
 }
@@ -780,6 +836,7 @@ async function removeTool(id){
 ============================================================ */
 function renderAll(){
   renderSetupWarning();
+  renderScanReadiness();
   renderTools();
   renderLoans();
   renderTeam();
@@ -804,14 +861,18 @@ function renderTools(){
     return;
   }
   el.innerHTML = state.tools.map(t => {
-    const statusLabel = t.status === 'available' ? 'Disponible' : 'Prestada';
-    const statusClass = t.status === 'available' ? 'status-available' : 'status-loaned';
+    const available = Number(t.available);
+    const quantity = Number(t.quantity);
+    let statusLabel, statusClass;
+    if(available <= 0){ statusLabel = `Agotada (0 de ${quantity})`; statusClass = 'status-overdue'; }
+    else if(available < quantity){ statusLabel = `Parcial (${available} de ${quantity})`; statusClass = 'status-loaned'; }
+    else { statusLabel = `Disponible (${available} de ${quantity})`; statusClass = 'status-available'; }
     return `
     <div class="panel" style="display:flex; align-items:center; gap:12px; cursor:pointer;" onclick="reprintTag('${t.id}')">
       <div class="tag-qr" style="background:#fff;" id="mini-qr-${t.id}"></div>
       <div style="flex:1; min-width:0;">
         <div style="font-weight:600; font-size:14.5px;">${escapeHtml(t.name)}</div>
-        <div class="mono" style="font-size:11px; color:var(--text-dim);">${escapeHtml(t.code)}</div>
+        <div class="mono" style="font-size:11px; color:var(--text-dim);">${escapeHtml(t.code)}${t.category ? ' · ' + escapeHtml(t.category) : ''}</div>
         <span class="status-chip ${statusClass}" style="margin-top:6px;">${statusLabel}</span>
       </div>
       <button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="event.stopPropagation(); removeTool('${t.id}')">🗑</button>
@@ -857,7 +918,7 @@ function renderLoans(){
         <div>
           <div style="font-weight:600; font-size:14.5px;">${escapeHtml(l.toolName)}</div>
           <div style="font-size:12.5px; color:var(--text-dim); margin-top:2px;">
-            A <b style="color:var(--text)">${escapeHtml(l.borrowerName)}</b> · por ${escapeHtml(l.lenderName)}
+            A <b style="color:var(--text)">${escapeHtml(l.borrowerName)}</b> (${l.quantity || 1} unidad${(l.quantity||1) > 1 ? 'es' : ''}) · por ${escapeHtml(l.lenderName)}
           </div>
           <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">Límite: ${formatDatePretty(l.expectedReturnDate)}${!l.borrowerEmail ? ' · <span style="color:var(--warn)">sin correo registrado</span>' : ''}</div>
         </div>
