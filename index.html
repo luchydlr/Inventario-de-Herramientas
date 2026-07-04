@@ -640,7 +640,7 @@ function openTagPreview(tool){
       <div class="tag-qr" id="preview-qr"></div>
       <div class="tag-info">
         <p class="name">${escapeHtml(tool.name)}</p>
-        <p class="cat">${escapeHtml(tool.category || '')}</p>
+        <p class="cat">📍 Ubicación: ${escapeHtml(tool.category || '—')}</p>
       </div>
     </div>
     <button class="btn btn-solid" onclick='printTag(${JSON.stringify(tool)})'>🖨 Imprimir etiqueta</button>
@@ -661,7 +661,7 @@ function reprintTag(toolId){
       <div class="tag-info">
         <p class="name">${escapeHtml(tool.name)}</p>
         <p class="code">${escapeHtml(tool.code)}</p>
-        <p class="cat">${escapeHtml(tool.category || '')}</p>
+        <p class="cat">📍 Ubicación: ${escapeHtml(tool.category || '—')}</p>
       </div>
     </div>
     <button class="btn btn-solid" onclick='printTag(${JSON.stringify(tool)})'>🖨 Reimprimir etiqueta</button>
@@ -677,7 +677,7 @@ function printTag(tool){
       <div class="tag-qr" id="print-qr"></div>
       <div class="tag-info">
         <p class="name">${escapeHtml(tool.name)}</p>
-        <p class="cat">${escapeHtml(tool.category || '')}</p>
+        <p class="cat">📍 Ubicación: ${escapeHtml(tool.category || '—')}</p>
       </div>
     </div>`;
   new QRCode(document.getElementById('print-qr'), { text: tool.code, width: 140, height: 140 });
