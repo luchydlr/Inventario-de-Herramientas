@@ -538,6 +538,12 @@ function openToolActionModal(toolId){
 
 let loanCart = [];
 
+function nowLocalDateTime(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+}
+
 function addToLoanCart(toolId){
   const tool = state.tools.find(t => t.id === toolId);
   if(!tool) return;
