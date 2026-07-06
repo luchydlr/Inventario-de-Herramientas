@@ -264,6 +264,14 @@
         <div class="eyebrow" style="margin-bottom:8px;">Último escaneo</div>
         <div id="scan-recent"></div>
       </div>
+      <div class="panel panel-dashed" id="loan-cart-panel" style="display:none;">
+        <div class="eyebrow" style="margin-bottom:8px;">Carrito de préstamo</div>
+        <div id="loan-cart-list"></div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-ghost" onclick="clearLoanCart()">Vaciar</button>
+          <button class="btn btn-solid" onclick="openGroupLoanModal()">Confirmar préstamo</button>
+        </div>
+      </div>
     </section>
 
     <!-- ===================== INVENTARIO ===================== -->
@@ -342,7 +350,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzdkuIlxm3bK_DMXVy2ggIB
 let MY_NAME = localStorage.getItem('toolwatch_my_name') || '';
 let MY_EMAIL = localStorage.getItem('toolwatch_my_email') || '';
 let MY_PHONE = localStorage.getItem('toolwatch_my_phone') || '';
-let state = { tools: [], team: [], loans: [],  locations: [] };
+let state = { tools: [], team: [], loans: [], locations: [] };
 let html5QrCode = null;
 
 document.getElementById('settings-myname').value = MY_NAME;
@@ -510,13 +518,14 @@ function openToolActionModal(toolId){
   const available = Number(tool.available);
   const quantity = Number(tool.quantity);
   const activeLoans = state.loans.filter(l => l.toolId === toolId && !l.returnDate);
+  const inCart = loanCart.some(c => c.toolId === toolId);
   let body = `
     <button class="modal-close-x" onclick="closeModal()">✕</button>
     <h3>${escapeHtml(tool.name)}</h3>
     <p style="font-size:13px; color:var(--text-dim); margin:2px 0 16px;">Disponibles: <b style="color:var(--text)">${available}</b> de ${quantity}</p>
   `;
   if(available > 0){
-    body += `<button class="btn btn-solid" style="margin-bottom:10px;" onclick="openLoanModal('${tool.id}')">📤 Prestar</button>`;
+    body += `<button class="btn btn-solid" style="margin-bottom:10px;" onclick="addToLoanCart('${tool.id}')" ${inCart ? 'disabled style="opacity:.45;"' : ''}>🛒 ${inCart ? 'Ya está en el carrito' : 'Añadir al préstamo'}</button>`;
   }
   if(activeLoans.length){
     body += `<button class="btn btn-success" onclick="openReturnPicker('${tool.id}')">📥 Registrar devolución</button>`;
@@ -525,6 +534,130 @@ function openToolActionModal(toolId){
     body += `<p style="font-size:13px; color:var(--text-dim);">No hay unidades disponibles ni préstamos activos registrados.</p>`;
   }
   openModal(body);
+}
+
+let loanCart = [];
+
+function addToLoanCart(toolId){
+  const tool = state.tools.find(t => t.id === toolId);
+  if(!tool) return;
+  if(loanCart.some(c => c.toolId === toolId)){
+    closeModal();
+    showToast('Esa herramienta ya está en el carrito');
+    return;
+  }
+  loanCart.push({ toolId: tool.id, toolName: tool.name, available: Number(tool.available), quantity: 1 });
+  closeModal();
+  renderLoanCart();
+  showToast('Añadida al carrito (' + loanCart.length + ')');
+}
+
+function removeFromLoanCart(toolId){
+  loanCart = loanCart.filter(c => c.toolId !== toolId);
+  renderLoanCart();
+}
+
+function clearLoanCart(){
+  loanCart = [];
+  renderLoanCart();
+}
+
+function updateCartQuantity(toolId, value){
+  const item = loanCart.find(c => c.toolId === toolId);
+  if(item) item.quantity = Math.max(1, Math.min(item.available, Number(value) || 1));
+}
+
+function renderLoanCart(){
+  const panel = document.getElementById('loan-cart-panel');
+  const list = document.getElementById('loan-cart-list');
+  if(!panel || !list) return;
+  if(!loanCart.length){ panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  list.innerHTML = loanCart.map(c => `
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line);">
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.toolName)}</div>
+        <div style="font-size:11px; color:var(--text-dim);">Disponibles: ${c.available}</div>
+      </div>
+      <input type="number" min="1" max="${c.available}" value="${c.quantity}" style="width:60px; padding:6px; text-align:center;" onchange="updateCartQuantity('${c.toolId}', this.value)">
+      <button class="btn btn-ghost" style="width:auto; padding:6px 8px;" onclick="removeFromLoanCart('${c.toolId}')">✕</button>
+    </div>
+  `).join('');
+}
+
+function openGroupLoanModal(){
+  if(!loanCart.length) return;
+  const teamOptions = state.team.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+  const itemsSummary = loanCart.map(c => `${escapeHtml(c.toolName)} (x${c.quantity})`).join(', ');
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>Confirmar préstamo</h3>
+    <p style="font-size:13px; color:var(--text-dim); margin:2px 0 4px;">${itemsSummary}</p>
+
+    <label>¿Quién presta? (equipo del proyecto) *</label>
+    <select id="gl-lender-select" oninput="updateGroupLoanButtonState()">
+      <option value="">— Selecciona —</option>
+      ${teamOptions}
+    </select>
+    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Ajustes o añade a alguien en Equipo.</p>' : ''}
+
+    <label>¿A quién se le presta? *</label>
+    <input id="gl-borrower-name" placeholder="Nombre de quien la recibe" oninput="this.value=this.value.toUpperCase(); updateGroupLoanButtonState()">
+    <label>Correo de quien recibe *</label>
+    <input id="gl-borrower-email" type="email" placeholder="Para avisarle si se vence" oninput="updateGroupLoanButtonState()">
+
+    <label>Fecha límite de devolución *</label>
+    <input id="gl-duedate" type="date" min="${todayISO()}" value="${addDaysISO(3)}" oninput="updateGroupLoanButtonState()">
+
+    <p class="field-hint">* Campos obligatorios</p>
+    <div style="margin-top:18px;">
+      <button class="btn btn-solid" id="gl-confirm-btn" disabled style="opacity:.45; cursor:not-allowed;" onclick="submitGroupLoan()">Confirmar préstamo (${loanCart.length})</button>
+    </div>
+  `);
+  const sel = document.getElementById('gl-lender-select');
+  const match = state.team.find(t => t.email && MY_EMAIL && t.email === MY_EMAIL);
+  if(match) sel.value = match.id;
+  updateGroupLoanButtonState();
+}
+
+function updateGroupLoanButtonState(){
+  const btn = document.getElementById('gl-confirm-btn');
+  if(!btn) return;
+  const lenderOk = document.getElementById('gl-lender-select').value !== '';
+  const borrowerOk = document.getElementById('gl-borrower-name').value.trim() !== '';
+  const emailOk = document.getElementById('gl-borrower-email').value.trim() !== '';
+  const dueDateVal = document.getElementById('gl-duedate').value;
+  const dateOk = dueDateVal !== '' && dueDateVal >= todayISO();
+  const ready = lenderOk && borrowerOk && emailOk && dateOk;
+  btn.disabled = !ready;
+  btn.style.opacity = ready ? '1' : '.45';
+  btn.style.cursor = ready ? 'pointer' : 'not-allowed';
+}
+
+async function submitGroupLoan(){
+  const lenderId = document.getElementById('gl-lender-select').value;
+  const lenderMember = state.team.find(t => t.id === lenderId);
+  const borrowerName = document.getElementById('gl-borrower-name').value.trim();
+  const borrowerEmail = document.getElementById('gl-borrower-email').value.trim();
+  const dueDate = document.getElementById('gl-duedate').value;
+
+  if(!lenderMember){ showToast('Selecciona quién presta'); return; }
+  if(!borrowerName || !borrowerEmail || !dueDate){ showToast('Completa todos los campos'); return; }
+  if(dueDate < todayISO()){ showToast('La fecha límite no puede ser anterior a hoy'); return; }
+
+  try{
+    state = await callApi('registerMultiLoan', {
+      items: loanCart.map(c => ({ toolId: c.toolId, toolName: c.toolName, quantity: c.quantity })),
+      borrowerName, borrowerEmail,
+      lenderId: lenderMember.id, lenderName: lenderMember.name, lenderEmail: lenderMember.email,
+      loanDate: nowLocalDateTime(), expectedReturnDate: dueDate
+    });
+    loanCart = [];
+    renderLoanCart();
+    closeModal();
+    renderAll();
+    showToast('Préstamo registrado ✓');
+  }catch(e){ showToast(e.message); }
 }
 
 /* ============================================================
@@ -708,95 +841,6 @@ function printTag(tool){
   setTimeout(() => window.print(), 200);
 }
 
-/* ---------- Registrar préstamo (flujo simple: 1 sola pantalla) ---------- */
-function openLoanModal(toolId){
-  const tool = state.tools.find(t => t.id === toolId);
-  if(!tool) return;
-  const available = Number(tool.available);
-  const teamOptions = state.team.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
-  openModal(`
-    <button class="modal-close-x" onclick="closeModal()">✕</button>
-    <h3>Registrar préstamo</h3>
-    <p style="font-size:13px; color:var(--text-dim); margin:2px 0 4px;">${escapeHtml(tool.name)} · <span class="mono">${escapeHtml(tool.code)}</span></p>
-
-    <label>¿Quién presta? (equipo del proyecto) *</label>
-    <select id="ln-lender-select" oninput="updateLoanButtonState()">
-      <option value="">— Selecciona —</option>
-      ${teamOptions}
-    </select>
-    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Ajustes o añade a alguien en Equipo.</p>' : ''}
-
-    <label>¿A quién se le presta? *</label>
-    <input id="ln-borrower-name" placeholder="Nombre de quien la recibe" oninput="this.value=this.value.toUpperCase(); updateLoanButtonState()">
-    <label>Correo de quien recibe *</label>
-    <input id="ln-borrower-email" type="email" placeholder="Para avisarle si se vence" oninput="updateLoanButtonState()">
-
-    <label>Cantidad a prestar * (disponibles: ${available})</label>
-    <input id="ln-quantity" type="number" min="1" max="${available}" value="1" oninput="updateLoanButtonState()">
-
-    <label>Fecha límite de devolución *</label>
-    <input id="ln-duedate" type="date" min="${todayISO()}" value="${addDaysISO(3)}" oninput="updateLoanButtonState()">
-
-    <p class="field-hint">* Campos obligatorios</p>
-    <div style="margin-top:18px;">
-      <button class="btn btn-solid" id="ln-confirm-btn" disabled style="opacity:.45; cursor:not-allowed;" onclick="submitLoan('${tool.id}')">Confirmar préstamo</button>
-    </div>
-  `);
-  const sel = document.getElementById('ln-lender-select');
-  const match = state.team.find(t => t.email && MY_EMAIL && t.email === MY_EMAIL);
-  if(match) sel.value = match.id;
-  updateLoanButtonState();
-}
-
-function updateLoanButtonState(){
-  const btn = document.getElementById('ln-confirm-btn');
-  if(!btn) return;
-  const lenderOk = document.getElementById('ln-lender-select').value !== '';
-  const borrowerOk = document.getElementById('ln-borrower-name').value.trim() !== '';
-  const emailOk = document.getElementById('ln-borrower-email').value.trim() !== '';
-  const qtyInput = document.getElementById('ln-quantity');
-  const qtyOk = Number(qtyInput.value) >= 1 && Number(qtyInput.value) <= Number(qtyInput.max);
-  const dueDateVal = document.getElementById('ln-duedate').value;
-  const dateOk = dueDateVal !== '' && dueDateVal >= todayISO();
-  const ready = lenderOk && borrowerOk && emailOk && qtyOk && dateOk;
-  btn.disabled = !ready;
-  btn.style.opacity = ready ? '1' : '.45';
-  btn.style.cursor = ready ? 'pointer' : 'not-allowed';
-}
-
-function nowLocalDateTime(){
-  const d = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
-}
-
-async function submitLoan(toolId){
-  const tool = state.tools.find(t => t.id === toolId);
-  const lenderId = document.getElementById('ln-lender-select').value;
-  const lenderMember = state.team.find(t => t.id === lenderId);
-  const borrowerName = document.getElementById('ln-borrower-name').value.trim();
-  const borrowerEmail = document.getElementById('ln-borrower-email').value.trim();
-  const quantity = Number(document.getElementById('ln-quantity').value) || 1;
-  const dueDate = document.getElementById('ln-duedate').value;
-
-  if(!lenderMember){ showToast('Selecciona quién presta'); return; }
-  if(!borrowerName || !borrowerEmail || !dueDate){ showToast('Completa todos los campos'); return; }
-  if(dueDate < todayISO()){ showToast('La fecha límite no puede ser anterior a hoy'); return; }
-  if(quantity < 1 || quantity > Number(tool.available)){ showToast('Cantidad inválida'); return; }
-
-  try{
-    state = await callApi('registerLoan', {
-      toolId: tool.id, toolName: tool.name,
-      borrowerName, borrowerEmail, quantity,
-      lenderId: lenderMember.id, lenderName: lenderMember.name,
-      loanDate: nowLocalDateTime(), expectedReturnDate: dueDate
-    });
-    closeModal();
-    renderAll();
-    showToast('Préstamo registrado ✓');
-  }catch(e){ showToast(e.message); }
-}
-
 /* ---------- Registrar devolución ---------- */
 function openReturnPicker(toolId){
   const tool = state.tools.find(t => t.id === toolId);
@@ -903,6 +947,7 @@ async function removeTool(id){
 function renderAll(){
   renderSetupWarning();
   renderScanReadiness();
+  renderLoanCart();
   renderTools();
   renderLoans();
   renderTeam();
