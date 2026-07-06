@@ -299,7 +299,7 @@
           Regístrate para aparecer en la lista de "equipo" al registrar un préstamo.
         </p>
         <label>Nombre</label>
-        <input id="settings-myname" placeholder="Tu nombre">
+        <input id="settings-myname" placeholder="Tu nombre" oninput="this.value=this.value.toUpperCase()">
         <label>Correo</label>
         <input id="settings-myemail" type="email" placeholder="tu@correo.com">
         <label>Teléfono</label>
@@ -342,7 +342,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzdkuIlxm3bK_DMXVy2ggIB
 let MY_NAME = localStorage.getItem('toolwatch_my_name') || '';
 let MY_EMAIL = localStorage.getItem('toolwatch_my_email') || '';
 let MY_PHONE = localStorage.getItem('toolwatch_my_phone') || '';
-let state = { tools: [], team: [], loans: [] };
+let state = { tools: [], team: [], loans: [],  locations: [] };
 let html5QrCode = null;
 
 document.getElementById('settings-myname').value = MY_NAME;
@@ -579,17 +579,23 @@ async function handleToolPhotoChange(event){
 function openAddToolModal(prefillCode){
   const code = prefillCode || genCode();
   pendingToolPhoto = '';
+  const locationOptions = (state.locations || []).map(l => `<option value="${escapeHtml(l.name)}">${escapeHtml(l.name)}</option>`).join('');
   openModal(`
     <button class="modal-close-x" onclick="closeModal()">✕</button>
     <h3>Nueva herramienta</h3>
     <label>Nombre *</label>
-    <input id="nt-name" placeholder="Ej: Taladro Bosch" oninput="updateToolButtonState()">
+    <input id="nt-name" placeholder="Ej: Taladro Bosch" oninput="this.value=this.value.toUpperCase(); updateToolButtonState()">
     <label>Ubicación *</label>
-    <input id="nt-cat" placeholder="Ej: Bodega 2" oninput="updateToolButtonState()">
+    <select id="nt-cat-select" onchange="handleLocationSelectChange()">
+      <option value="">— Selecciona —</option>
+      ${locationOptions}
+      <option value="__new__">+ Nueva ubicación...</option>
+    </select>
+    <input id="nt-cat-new" placeholder="Nombre de la nueva ubicación" style="display:none; margin-top:8px;" oninput="this.value=this.value.toUpperCase(); updateToolButtonState()">
     <label>Cantidad *</label>
     <input id="nt-cant" type="number" min="1" placeholder="Ej: 1" oninput="updateToolButtonState()">
     <label>Foto de la herramienta *</label>
-    <input id="nt-photo-input" type="file" accept="image/*" capture="environment" onchange="handleToolPhotoChange(event)">
+    <input id="nt-photo-input" type="file" accept="image/*" onchange="handleToolPhotoChange(event)">
     <div id="nt-photo-preview" style="margin-top:8px;"></div>
     <label>Código (generado automáticamente)</label>
     <input id="nt-code" value="${escapeHtml(code)}" class="mono" readonly style="opacity:.6; cursor:not-allowed;">
@@ -601,11 +607,26 @@ function openAddToolModal(prefillCode){
   updateToolButtonState();
 }
 
+function handleLocationSelectChange(){
+  const sel = document.getElementById('nt-cat-select');
+  const newInput = document.getElementById('nt-cat-new');
+  newInput.style.display = sel.value === '__new__' ? 'block' : 'none';
+  if(sel.value !== '__new__') newInput.value = '';
+  updateToolButtonState();
+}
+
+function getSelectedLocation(){
+  const sel = document.getElementById('nt-cat-select');
+  if(!sel) return '';
+  if(sel.value === '__new__') return document.getElementById('nt-cat-new').value.trim();
+  return sel.value;
+}
+
 function updateToolButtonState(){
   const btn = document.getElementById('nt-confirm-btn');
   if(!btn) return;
   const nameOk = document.getElementById('nt-name').value.trim() !== '';
-  const catOk = document.getElementById('nt-cat').value.trim() !== '';
+  const catOk = getSelectedLocation() !== '';
   const cantVal = Number(document.getElementById('nt-cant').value);
   const cantOk = cantVal >= 1;
   const photoOk = pendingToolPhoto !== '';
@@ -617,11 +638,14 @@ function updateToolButtonState(){
 
 async function submitAddTool(){
   const name = document.getElementById('nt-name').value.trim();
-  const cat = document.getElementById('nt-cat').value.trim();
+  const cat = getSelectedLocation();
   const cant = Number(document.getElementById('nt-cant').value) || 0;
   const code = document.getElementById('nt-code').value.trim();
   if(!name || !cat || !code || cant < 1 || !pendingToolPhoto){ showToast('Llena todos los campos, incluida la foto'); return; }
   try{
+    if(!state.locations.some(l => l.name === cat)){
+      state = await callApi('addLocation', { name: cat });
+    }
     state = await callApi('addTool', { name, category: cat, quantity: cant, code, photo: pendingToolPhoto });
     closeModal();
     renderAll();
@@ -703,7 +727,7 @@ function openLoanModal(toolId){
     ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Ajustes o añade a alguien en Equipo.</p>' : ''}
 
     <label>¿A quién se le presta? *</label>
-    <input id="ln-borrower-name" placeholder="Nombre de quien la recibe" oninput="updateLoanButtonState()">
+    <input id="ln-borrower-name" placeholder="Nombre de quien la recibe" oninput="this.value=this.value.toUpperCase(); updateLoanButtonState()">
     <label>Correo de quien recibe *</label>
     <input id="ln-borrower-email" type="email" placeholder="Para avisarle si se vence" oninput="updateLoanButtonState()">
 
@@ -827,7 +851,7 @@ function openAddTeamModal(){
     <button class="modal-close-x" onclick="closeModal()">✕</button>
     <h3>Añadir persona</h3>
     <label>Nombre *</label>
-    <input id="tm-name" placeholder="Nombre completo" oninput="updateTeamButtonState()">
+    <input id="tm-name" placeholder="Nombre completo" oninput="this.value=this.value.toUpperCase(); updateTeamButtonState()">
     <label>Correo (para avisos automáticos) *</label>
     <input id="tm-email" type="email" placeholder="correo@ejemplo.com" oninput="updateTeamButtonState()">
     <label>Teléfono *</label>
