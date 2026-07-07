@@ -242,10 +242,13 @@
 </style>
 </head>
 <body>
-<div id="app">
+<div id="app" style="display:none;">
   <header>
     <div class="eyebrow">Control de préstamos</div>
-    <h1>🛠 HERRAMIENTAS</h1>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <h1>🛠 HERRAMIENTAS</h1>
+      <button id="identity-chip" onclick="openSessionMenu()" style="background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:20px; padding:6px 12px; font-family:'Space Mono',monospace; font-size:10.5px; cursor:pointer; white-space:nowrap;">👤 ...</button>
+    </div>
   </header>
 
   <main>
@@ -298,25 +301,6 @@
       </div>
       <div id="team-list"></div>
     </section>
-
-    <!-- ===================== AJUSTES ===================== -->
-    <section class="tab" id="tab-settings">
-      <div class="panel">
-        <div class="eyebrow" style="margin-bottom:4px;">Mi registro</div>
-        <p style="font-size:12.5px; color:var(--text-dim); margin:2px 0 4px;">
-          Regístrate para aparecer en la lista de "equipo" al registrar un préstamo.
-        </p>
-        <label>Nombre</label>
-        <input id="settings-myname" placeholder="Tu nombre" oninput="this.value=this.value.toUpperCase()">
-        <label>Correo</label>
-        <input id="settings-myemail" type="email" placeholder="tu@correo.com">
-        <label>Teléfono</label>
-        <input id="settings-myphone" placeholder="Ej: 3001234567">
-        <div style="margin-top:16px;">
-          <button class="btn btn-solid" onclick="saveSettings()">Guardar mis datos</button>
-        </div>
-      </div>
-    </section>
   </main>
 
   <nav class="tabbar">
@@ -324,8 +308,18 @@
     <button data-tab="tools" onclick="switchTab('tools')"><span class="dot"></span>Inventario</button>
     <button data-tab="loans" onclick="switchTab('loans')"><span class="dot"></span>Préstamos</button>
     <button data-tab="team" onclick="switchTab('team')"><span class="dot"></span>Equipo</button>
-    <button data-tab="settings" onclick="switchTab('settings')"><span class="dot"></span>Registro</button>
   </nav>
+</div>
+
+<!-- LOGIN OVERLAY -->
+<div id="login-overlay" style="position:fixed; inset:0; background:var(--bg); z-index:70; display:none; flex-direction:column; align-items:center; justify-content:center; padding:24px;">
+  <div style="width:100%; max-width:340px;">
+    <div style="text-align:center; margin-bottom:22px;">
+      <div class="eyebrow">Control de préstamos</div>
+      <h1 style="font-size:19px;">🛠 HERRAMIENTAS</h1>
+    </div>
+    <div id="login-form-area"></div>
+  </div>
 </div>
 
 <!-- SCANNER OVERLAY -->
@@ -347,35 +341,130 @@
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbzdkuIlxm3bK_DMXVy2ggIB4PpSXSEF6a5_sgnT53EtqdWvqc99l6Lvu41CNtW3qpkA/exec';
 
-let MY_NAME = localStorage.getItem('toolwatch_my_name') || '';
-let MY_EMAIL = localStorage.getItem('toolwatch_my_email') || '';
-let MY_PHONE = localStorage.getItem('toolwatch_my_phone') || '';
-let state = { tools: [], team: [], loans: [], locations: [] };
+let AUTH_TOKEN = localStorage.getItem('toolwatch_token') || '';
+let CURRENT_USER = null;
+let currentIsAdmin = false;
+let state = { tools: [], team: [], loans: [], locations: [], adminEmails: [] };
 let html5QrCode = null;
 
-document.getElementById('settings-myname').value = MY_NAME;
-document.getElementById('settings-myemail').value = MY_EMAIL;
-document.getElementById('settings-myphone').value = MY_PHONE;
+function getCurrentMember(){
+  return CURRENT_USER;
+}
 
-async function saveSettings(){
-  MY_NAME = document.getElementById('settings-myname').value.trim();
-  MY_EMAIL = document.getElementById('settings-myemail').value.trim();
-  MY_PHONE = document.getElementById('settings-myphone').value.trim();
-  if(!MY_NAME || !MY_EMAIL || !MY_PHONE){ showToast('Completa todos los campos'); return; }
-  localStorage.setItem('toolwatch_my_name', MY_NAME);
-  localStorage.setItem('toolwatch_my_email', MY_EMAIL);
-  localStorage.setItem('toolwatch_my_phone', MY_PHONE);
+function updateIdentityChip(){
+  const chip = document.getElementById('identity-chip');
+  if(!chip) return;
+  chip.textContent = CURRENT_USER ? ('👤 ' + CURRENT_USER.name) : '👤 ...';
+}
 
-  try{
-    const existing = state.team.find(t => MY_EMAIL && t.email === MY_EMAIL);
-    if(!existing){
-      state = await callApi('addTeamMember', { name: MY_NAME, email: MY_EMAIL, phone: MY_PHONE });
-      renderAll();
-    }
-    showToast('Datos guardados ✓');
-  }catch(e){
-    showToast('Se guardó en este dispositivo, pero no se pudo sincronizar: ' + e.message);
+function openSessionMenu(){
+  if(!CURRENT_USER) return;
+  openModal(`
+    <button class="modal-close-x" onclick="closeModal()">✕</button>
+    <h3>${escapeHtml(CURRENT_USER.name)}</h3>
+    <p style="font-size:12.5px; color:var(--text-dim); margin:2px 0 16px;">${currentIsAdmin ? '🔑 Administrador' : 'Miembro del equipo'}</p>
+    <button class="btn btn-danger" onclick="logout()">Cerrar sesión</button>
+  `);
+}
+
+function logout(){
+  AUTH_TOKEN = '';
+  CURRENT_USER = null;
+  currentIsAdmin = false;
+  localStorage.removeItem('toolwatch_token');
+  closeModal();
+  showLoginScreen('login');
+}
+
+/* ============================================================
+   LOGIN / CREAR CUENTA
+============================================================ */
+function showLoginScreen(mode){
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  renderLoginForm(mode || 'login');
+}
+
+function hideLoginScreen(){
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+}
+
+function renderLoginForm(mode){
+  const area = document.getElementById('login-form-area');
+  if(mode === 'signup'){
+    area.innerHTML = `
+      <div class="panel">
+        <div class="eyebrow" style="margin-bottom:10px;">Crear cuenta</div>
+        <label>Nombre *</label>
+        <input id="su-name" placeholder="Nombre completo" oninput="this.value=this.value.toUpperCase()">
+        <label>Correo *</label>
+        <input id="su-email" type="email" placeholder="correo@ejemplo.com">
+        <label>Teléfono *</label>
+        <input id="su-phone" placeholder="Ej: 3001234567">
+        <label>Usuario *</label>
+        <input id="su-username" placeholder="Elige un usuario">
+        <label>Contraseña *</label>
+        <input id="su-password" type="password" placeholder="Elige una contraseña">
+        <div style="margin-top:16px;">
+          <button class="btn btn-solid" onclick="submitSignup()">Crear cuenta</button>
+        </div>
+        <p style="text-align:center; margin-top:14px; font-size:12.5px; color:var(--text-dim);">
+          ¿Ya tienes cuenta? <a href="#" onclick="renderLoginForm('login'); return false;" style="color:var(--accent);">Inicia sesión</a>
+        </p>
+      </div>
+    `;
+  } else {
+    area.innerHTML = `
+      <div class="panel">
+        <div class="eyebrow" style="margin-bottom:10px;">Iniciar sesión</div>
+        <label>Usuario</label>
+        <input id="li-username" placeholder="Tu usuario">
+        <label>Contraseña</label>
+        <input id="li-password" type="password" placeholder="Tu contraseña">
+        <div style="margin-top:16px;">
+          <button class="btn btn-solid" onclick="submitLogin()">Entrar</button>
+        </div>
+        <p style="text-align:center; margin-top:14px; font-size:12.5px; color:var(--text-dim);">
+          ¿No tienes cuenta? <a href="#" onclick="renderLoginForm('signup'); return false;" style="color:var(--accent);">Créala aquí</a>
+        </p>
+      </div>
+    `;
   }
+}
+
+async function submitLogin(){
+  const username = document.getElementById('li-username').value.trim();
+  const password = document.getElementById('li-password').value;
+  if(!username || !password){ showToast('Completa usuario y contraseña'); return; }
+  try{
+    const data = await callApi('login', { username, password });
+    applyLoginResult(data);
+  }catch(e){ showToast(e.message); }
+}
+
+async function submitSignup(){
+  const name = document.getElementById('su-name').value.trim();
+  const email = document.getElementById('su-email').value.trim();
+  const phone = document.getElementById('su-phone').value.trim();
+  const username = document.getElementById('su-username').value.trim();
+  const password = document.getElementById('su-password').value;
+  if(!name || !email || !phone || !username || !password){ showToast('Completa todos los campos'); return; }
+  try{
+    await callApi('addTeamMember', { name, email, phone, username, password });
+    const data = await callApi('login', { username, password });
+    applyLoginResult(data);
+    showToast('Cuenta creada ✓');
+  }catch(e){ showToast(e.message); }
+}
+
+function applyLoginResult(data){
+  AUTH_TOKEN = data.token;
+  CURRENT_USER = data.member;
+  currentIsAdmin = !!data.isAdmin;
+  localStorage.setItem('toolwatch_token', AUTH_TOKEN);
+  hideLoginScreen();
+  loadData();
 }
 
 function renderSetupWarning(){
@@ -605,7 +694,7 @@ function openGroupLoanModal(){
       <option value="">— Selecciona —</option>
       ${teamOptions}
     </select>
-    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Regístrate en Ajustes o añade a alguien en Equipo.</p>' : ''}
+    ${!state.team.length ? '<p class="field-hint">No hay nadie en Equipo todavía. Añade a alguien primero.</p>' : ''}
 
     <label>¿A quién se le presta? *</label>
     <input id="gl-borrower-name" placeholder="Nombre de quien la recibe" oninput="this.value=this.value.toUpperCase(); updateGroupLoanButtonState()">
@@ -621,7 +710,7 @@ function openGroupLoanModal(){
     </div>
   `);
   const sel = document.getElementById('gl-lender-select');
-  const match = state.team.find(t => t.email && MY_EMAIL && t.email === MY_EMAIL);
+  const match = getCurrentMember();
   if(match) sel.value = match.id;
   updateGroupLoanButtonState();
 }
@@ -906,6 +995,10 @@ function openAddTeamModal(){
     <input id="tm-email" type="email" placeholder="correo@ejemplo.com" oninput="updateTeamButtonState()">
     <label>Teléfono *</label>
     <input id="tm-phone" placeholder="Ej: 3001234567" oninput="updateTeamButtonState()">
+    <label>Usuario *</label>
+    <input id="tm-username" placeholder="Usuario para iniciar sesión" oninput="updateTeamButtonState()">
+    <label>Contraseña *</label>
+    <input id="tm-password" type="password" placeholder="Contraseña" oninput="updateTeamButtonState()">
     <p class="field-hint">* Campos obligatorios</p>
     <div style="margin-top:18px;">
       <button class="btn btn-solid" id="tm-confirm-btn" disabled style="opacity:.45; cursor:not-allowed;" onclick="submitAddTeam()">Guardar</button>
@@ -919,7 +1012,9 @@ function updateTeamButtonState(){
   if(!btn) return;
   const ready = document.getElementById('tm-name').value.trim() !== ''
     && document.getElementById('tm-email').value.trim() !== ''
-    && document.getElementById('tm-phone').value.trim() !== '';
+    && document.getElementById('tm-phone').value.trim() !== ''
+    && document.getElementById('tm-username').value.trim() !== ''
+    && document.getElementById('tm-password').value !== '';
   btn.disabled = !ready;
   btn.style.opacity = ready ? '1' : '.45';
   btn.style.cursor = ready ? 'pointer' : 'not-allowed';
@@ -929,28 +1024,33 @@ async function submitAddTeam(){
   const name = document.getElementById('tm-name').value.trim();
   const email = document.getElementById('tm-email').value.trim();
   const phone = document.getElementById('tm-phone').value.trim();
-  if(!name || !email || !phone){ showToast('Completa todos los campos'); return; }
+  const username = document.getElementById('tm-username').value.trim();
+  const password = document.getElementById('tm-password').value;
+  if(!name || !email || !phone || !username || !password){ showToast('Completa todos los campos'); return; }
   try{
-    state = await callApi('addTeamMember', { name, email, phone });
+    state = await callApi('addTeamMember', { name, email, phone, username, password });
     closeModal();
     renderAll();
   }catch(e){ showToast(e.message); }
 }
 
 async function removeTeamMember(id){
+  if(!currentIsAdmin){ showToast('Solo un administrador puede eliminar'); return; }
   if(!confirm('¿Eliminar a esta persona?')) return;
-  try{ state = await callApi('deleteTeamMember', { id }); renderAll(); }catch(e){ showToast(e.message); }
+  try{ state = await callApi('deleteTeamMember', { id, token: AUTH_TOKEN }); renderAll(); }catch(e){ showToast(e.message); }
 }
 
 async function removeTool(id){
+  if(!currentIsAdmin){ showToast('Solo un administrador puede eliminar'); return; }
   if(!confirm('¿Eliminar esta herramienta del inventario?')) return;
-  try{ state = await callApi('deleteTool', { id }); renderAll(); }catch(e){ showToast(e.message); }
+  try{ state = await callApi('deleteTool', { id, token: AUTH_TOKEN }); renderAll(); }catch(e){ showToast(e.message); }
 }
 
 /* ============================================================
    RENDER
 ============================================================ */
 function renderAll(){
+  updateIdentityChip();
   renderSetupWarning();
   renderScanReadiness();
   renderLoanCart();
@@ -965,7 +1065,7 @@ function renderScanReadiness(){
   if(!state.tools.length){
     el.innerHTML = `<div class="banner banner-info">👋 Primero añade tu primera herramienta en <b>Inventario</b> — ahí la app te genera el código QR para imprimir.</div>`;
   } else if(!state.team.length){
-    el.innerHTML = `<div class="banner banner-info">👋 Regístrate en <b>Ajustes</b> (o añade a alguien en <b>Equipo</b>) para poder elegir quién presta.</div>`;
+    el.innerHTML = `<div class="banner banner-info">👋 Añade a alguien más al equipo en <b>Equipo</b> (o pide que se creen su propia cuenta) para poder elegir quién presta.</div>`;
   } else {
     el.innerHTML = '';
   }
@@ -987,7 +1087,7 @@ function renderTools(){
         <div style="font-weight:600; font-size:14.5px;">${escapeHtml(t.name)}</div>
         <div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${escapeHtml(t.category || '')}</div>
       </div>
-      <button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="event.stopPropagation(); removeTool('${t.id}')">🗑</button>
+      ${currentIsAdmin ? `<button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="event.stopPropagation(); removeTool('${t.id}')">🗑</button>` : ''}
     </div>`;
   }).join('');
 }
@@ -1051,7 +1151,7 @@ function renderTeam(){
         <div style="font-weight:600; font-size:14.5px;">${escapeHtml(t.name)}</div>
         <div style="font-size:12px; color:var(--text-dim);">${escapeHtml(t.email || 'sin correo — no recibirá avisos')}</div>
       </div>
-      <button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="removeTeamMember('${t.id}')">🗑</button>
+      ${currentIsAdmin ? `<button class="btn btn-ghost" style="width:auto; padding:8px 10px;" onclick="removeTeamMember('${t.id}')">🗑</button>` : ''}
     </div>
   `).join('');
 }
@@ -1059,8 +1159,24 @@ function renderTeam(){
 /* ============================================================
    INICIO
 ============================================================ */
-renderSetupWarning();
-if(API_URL) loadData();
+async function boot(){
+  renderSetupWarning();
+  if(!API_URL) return;
+  if(!AUTH_TOKEN){
+    showLoginScreen('login');
+    return;
+  }
+  try{
+    const data = await callApi('whoami', { token: AUTH_TOKEN });
+    CURRENT_USER = data.member;
+    currentIsAdmin = !!data.isAdmin;
+    hideLoginScreen();
+    loadData();
+  }catch(e){
+    logout();
+  }
+}
+boot();
 </script>
 </body>
 </html>
