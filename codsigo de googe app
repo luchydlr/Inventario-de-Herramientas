@@ -1,0 +1,405 @@
+var SHEET_ID_PROP = 'SPREADSHEET_ID';
+
+function setup() {
+  var props = PropertiesService.getScriptProperties();
+  var existing = props.getProperty(SHEET_ID_PROP);
+  var ss;
+  if (existing) {
+    ss = SpreadsheetApp.openById(existing);
+  } else {
+    ss = SpreadsheetApp.create('Control de Herramientas - Base de datos');
+    props.setProperty(SHEET_ID_PROP, ss.getId());
+  }
+
+  ensureSheet(ss, 'Tools', ['id', 'code', 'name', 'category', 'quantity', 'available', 'photo']);
+  ensureSheet(ss, 'Team', ['id', 'name', 'email', 'phone', 'username', 'passwordHash']);
+  ensureSheet(ss, 'Loans', ['id', 'toolId', 'toolName', 'borrowerName', 'borrowerEmail', 'lenderId', 'lenderName', 'loanDate', 'expectedReturnDate', 'returnDate', 'lastNotifiedDate', 'quantity']);
+  ensureSheet(ss, 'Locations', ['id', 'name']);
+
+  var def = ss.getSheetByName('Hoja 1') || ss.getSheetByName('Sheet1');
+  if (def && ss.getSheets().length > 1) ss.deleteSheet(def);
+
+  var triggers = ScriptApp.getProjectTriggers();
+  var already = triggers.some(function (t) { return t.getHandlerFunction() === 'checkOverdueLoans'; });
+  if (!already) {
+    ScriptApp.newTrigger('checkOverdueLoans').timeBased().everyDays(1).atHour(8).create();
+  }
+
+  Logger.log('Listo. Hoja de cálculo: ' + ss.getUrl());
+  return ss.getUrl();
+}
+
+function ensureSheet(ss, name, headers) {
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function getSS() {
+  var id = PropertiesService.getScriptProperties().getProperty(SHEET_ID_PROP);
+  if (!id) throw new Error('Ejecuta la función setup() primero desde el editor de Apps Script.');
+  return SpreadsheetApp.openById(id);
+}
+
+// ================= API WEB =================
+function doGet(e) {
+  return jsonOut({ ok: true, message: 'API de Control de Herramientas activa.' });
+}
+
+function doPost(e) {
+  try {
+    var body = JSON.parse(e.postData.contents);
+    var action = body.action;
+    var payload = body.payload || {};
+    var result;
+    switch (action) {
+      case 'getData': result = getData(); break;
+      case 'addTool': result = addTool(payload); break;
+      case 'addLocation': result = addLocation(payload); break;
+      case 'deleteTool': result = deleteTool(payload); break;
+      case 'addTeamMember': result = addTeamMember(payload); break;
+      case 'deleteTeamMember': result = deleteTeamMember(payload); break;
+      case 'login': result = login(payload); break;
+      case 'whoami': result = whoami(payload); break;
+      case 'registerLoan': result = registerLoan(payload); break;
+      case 'registerMultiLoan': result = registerMultiLoan(payload); break;
+      case 'registerReturn': result = registerReturn(payload); break;
+      default: throw new Error('Accion no reconocida: ' + action);
+    }
+    return jsonOut({ ok: true, data: result });
+  } catch (err) {
+    return jsonOut({ ok: false, error: err.message });
+  }
+}
+
+function jsonOut(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ================= HELPERS =================
+function sheetToObjects(sheet) {
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0];
+  var rows = values.slice(1);
+  return rows.filter(function (r) { return r.join('') !== ''; }).map(function (r) {
+    var obj = {};
+    headers.forEach(function (h, i) {
+      var val = r[i];
+      if (val instanceof Date) {
+        if (h === 'loanDate') {
+          val = Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+        } else {
+          val = Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        }
+      }
+      obj[h] = val;
+    });
+    return obj;
+  });
+}
+
+function findRowIndexById(sheet, id) {
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]) === String(id)) return i + 1;
+  }
+  return -1;
+}
+
+// ================= DATOS =================
+function getData() {
+  var ss = getSS();
+  var team = sheetToObjects(ss.getSheetByName('Team')).map(function (t) {
+    return { id: t.id, name: t.name, email: t.email, phone: t.phone, username: t.username };
+  });
+  return {
+    tools: sheetToObjects(ss.getSheetByName('Tools')),
+    team: team,
+    loans: sheetToObjects(ss.getSheetByName('Loans')),
+    locations: sheetToObjects(ss.getSheetByName('Locations')),
+    adminEmails: getAdminEmails()
+  };
+}
+
+// ================= ADMINISTRADORES =================
+function setAdminEmails() {
+  var emails = 'practicante.proyectos@energiasolarsa.com,aprendiz.mttoesw@energiasolarsa.com'; // <-- cambia esto
+  PropertiesService.getScriptProperties().setProperty('ADMIN_EMAILS', emails);
+  Logger.log('Administradores guardados: ' + emails);
+}
+
+function getAdminEmails() {
+  var raw = PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS') || '';
+  return raw.split(',').map(function (e) { return e.trim(); }).filter(function (e) { return e; });
+}
+
+function isAdminEmail(email) {
+  if (!email) return false;
+  return getAdminEmails().indexOf(email) > -1;
+}
+
+// ================= USUARIOS Y CONTRASEÑAS =================
+function hashPassword(password) {
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(password), Utilities.Charset.UTF_8);
+  return digest.map(function (b) {
+    var v = (b < 0 ? b + 256 : b).toString(16);
+    return v.length === 1 ? '0' + v : v;
+  }).join('');
+}
+
+function login(p) {
+  var ss = getSS();
+  var team = sheetToObjects(ss.getSheetByName('Team'));
+  var member = team.filter(function (t) { return t.username && t.username === p.username; })[0];
+  if (!member) throw new Error('Usuario o contraseña incorrectos');
+  if (hashPassword(p.password) !== member.passwordHash) throw new Error('Usuario o contraseña incorrectos');
+  var token = Utilities.getUuid();
+  CacheService.getScriptCache().put('session_' + token, member.id, 21600); // 6 horas
+  return {
+    token: token,
+    member: { id: member.id, name: member.name, email: member.email },
+    isAdmin: isAdminEmail(member.email)
+  };
+}
+
+function verifyToken(token) {
+  if (!token) return null;
+  var cache = CacheService.getScriptCache();
+  var memberId = cache.get('session_' + token);
+  if (!memberId) return null;
+  cache.put('session_' + token, memberId, 21600); // renueva la sesion en cada uso
+  return memberId;
+}
+
+function getMemberById(id) {
+  var team = sheetToObjects(getSS().getSheetByName('Team'));
+  return team.filter(function (t) { return t.id === id; })[0] || null;
+}
+
+function whoami(p) {
+  var memberId = verifyToken(p.token);
+  if (!memberId) throw new Error('Sesion invalida, inicia sesion de nuevo');
+  var member = getMemberById(memberId);
+  if (!member) throw new Error('Usuario no encontrado');
+  return {
+    member: { id: member.id, name: member.name, email: member.email },
+    isAdmin: isAdminEmail(member.email)
+  };
+}
+
+function requireAdmin(token) {
+  var memberId = verifyToken(token);
+  if (!memberId) throw new Error('Sesion invalida, inicia sesion de nuevo');
+  var member = getMemberById(memberId);
+  if (!member || !isAdminEmail(member.email)) throw new Error('Solo un administrador puede realizar esta accion');
+}
+
+// ================= MIGRACION: asignar usuario/contraseña a alguien ya existente =================
+// Usa esto para las personas que ya estaban en Equipo antes de tener contraseña.
+// Cambia los 3 valores, selecciona "setPasswordForMember" y dale a Ejecutar (una vez por persona).
+function setPasswordForMember() {
+  var nombreExacto = 'NOMBRE TAL COMO APARECE EN EQUIPO'; // <-- cambia esto
+  var username = 'usuario_elegido'; // <-- cambia esto
+  var password = 'contraseña_elegida'; // <-- cambia esto
+
+  var ss = getSS();
+  var sheet = ss.getSheetByName('Team');
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1] === nombreExacto) {
+      sheet.getRange(i + 1, 5).setValue(username);
+      sheet.getRange(i + 1, 6).setValue(hashPassword(password));
+      Logger.log('Listo, se asigno usuario a: ' + nombreExacto);
+      return;
+    }
+  }
+  Logger.log('No se encontro a nadie con el nombre: ' + nombreExacto);
+}
+
+function addLocation(p) {
+  var ss = getSS();
+  var sheet = ss.getSheetByName('Locations');
+  var existing = sheetToObjects(sheet).some(function(l){ return l.name === p.name; });
+  if (!existing) {
+    var id = Utilities.getUuid();
+    sheet.appendRow([id, p.name]);
+  }
+  return getData();
+}
+
+function addTool(p) {
+  var ss = getSS();
+  var sheet = ss.getSheetByName('Tools');
+  var id = Utilities.getUuid();
+  var qty = Math.max(1, Number(p.quantity) || 1);
+  sheet.appendRow([id, p.code, p.name, p.category || '', qty, qty, p.photo || '']);
+  return getData();
+}
+
+function deleteTool(p) {
+  requireAdmin(p.token);
+  var ss = getSS();
+  var sheet = ss.getSheetByName('Tools');
+  var row = findRowIndexById(sheet, p.id);
+  if (row > -1) sheet.deleteRow(row);
+  return getData();
+}
+
+function addTeamMember(p) {
+  var ss = getSS();
+  var sheet = ss.getSheetByName('Team');
+  if (!p.username || !p.password) throw new Error('Usuario y contraseña son obligatorios');
+  var existing = sheetToObjects(sheet).some(function (t) { return t.username === p.username; });
+  if (existing) throw new Error('Ese usuario ya existe, elige otro');
+  var id = Utilities.getUuid();
+  sheet.appendRow([id, p.name, p.email || '', p.phone || '', p.username, hashPassword(p.password)]);
+  return getData();
+}
+
+function deleteTeamMember(p) {
+  requireAdmin(p.token);
+  var ss = getSS();
+  var sheet = ss.getSheetByName('Team');
+  var row = findRowIndexById(sheet, p.id);
+  if (row > -1) sheet.deleteRow(row);
+  return getData();
+}
+
+function registerLoan(p) {
+  var ss = getSS();
+  var loans = ss.getSheetByName('Loans');
+  var tools = ss.getSheetByName('Tools');
+  var qty = Math.max(1, Number(p.quantity) || 1);
+  var toolRow = findRowIndexById(tools, p.toolId);
+  if (toolRow === -1) throw new Error('Herramienta no encontrada');
+  var available = Number(tools.getRange(toolRow, 6).getValue()) || 0;
+  if (qty > available) throw new Error('Solo hay ' + available + ' disponible(s)');
+  var id = Utilities.getUuid();
+  loans.appendRow([id, p.toolId, p.toolName, p.borrowerName, p.borrowerEmail || '', p.lenderId || '', p.lenderName, p.loanDate, p.expectedReturnDate, '', '', qty]);
+  tools.getRange(toolRow, 6).setValue(available - qty);
+  return getData();
+}
+
+// ================= CORREO DEL JEFE (privado, no aparece en la app) =================
+function setBossEmail() {
+  var email = 'aprendiz.mttoesw@energiasolarsa.com';
+  PropertiesService.getScriptProperties().setProperty('BOSS_EMAIL', email);
+  Logger.log('Correo del jefe guardado: ' + email);
+}
+
+function getBossEmail() {
+  return PropertiesService.getScriptProperties().getProperty('BOSS_EMAIL') || '';
+}
+
+function registerMultiLoan(p) {
+  var ss = getSS();
+  var loans = ss.getSheetByName('Loans');
+  var tools = ss.getSheetByName('Tools');
+  var items = p.items || [];
+  if (!items.length) throw new Error('No hay herramientas en el préstamo');
+
+  // Validar disponibilidad de todas antes de registrar ninguna
+  items.forEach(function (item) {
+    var toolRow = findRowIndexById(tools, item.toolId);
+    if (toolRow === -1) throw new Error('Herramienta no encontrada: ' + item.toolName);
+    var available = Number(tools.getRange(toolRow, 6).getValue()) || 0;
+    var qty = Math.max(1, Number(item.quantity) || 1);
+    if (qty > available) throw new Error('Solo hay ' + available + ' disponible(s) de ' + item.toolName);
+  });
+
+  var createdItems = [];
+  items.forEach(function (item) {
+    var qty = Math.max(1, Number(item.quantity) || 1);
+    var toolRow = findRowIndexById(tools, item.toolId);
+    var available = Number(tools.getRange(toolRow, 6).getValue()) || 0;
+    var id = Utilities.getUuid();
+    loans.appendRow([id, item.toolId, item.toolName, p.borrowerName, p.borrowerEmail || '', p.lenderId || '', p.lenderName, p.loanDate, p.expectedReturnDate, '', '', qty]);
+    tools.getRange(toolRow, 6).setValue(available - qty);
+    createdItems.push({ name: item.toolName, quantity: qty });
+  });
+
+  var itemsText = createdItems.map(function (it) { return '- ' + it.name + ' x' + it.quantity; }).join('\n');
+  var asunto = 'Confirmacion de prestamo registrado';
+  var cuerpo = 'Se registro un prestamo hecho por ' + p.lenderName + ' a nombre de ' + p.borrowerName + ' con las siguientes herramientas:\n\n' +
+    itemsText + '\n\n' +
+    'Fecha de prestamo: ' + p.loanDate + '\n' +
+    'Fecha limite de devolucion: ' + p.expectedReturnDate + '\n\n' +
+    '— Control de Herramientas';
+
+  var teamEmails = sheetToObjects(ss.getSheetByName('Team'))
+    .map(function (t) { return t.email; })
+    .filter(function (email) { return email; });
+  var bossEmail = getBossEmail();
+  var recipients = teamEmails.slice();
+  if (bossEmail && recipients.indexOf(bossEmail) === -1) recipients.push(bossEmail);
+  recipients = recipients.filter(function (email, i) { return recipients.indexOf(email) === i; });
+
+  if (recipients.length) {
+    GmailApp.sendEmail(recipients.join(','), asunto, cuerpo);
+  }
+
+  return getData();
+}
+
+function registerReturn(p) {
+  var ss = getSS();
+  var loans = ss.getSheetByName('Loans');
+  var tools = ss.getSheetByName('Tools');
+  var row = findRowIndexById(loans, p.loanId);
+  if (row === -1) throw new Error('Prestamo no encontrado');
+  loans.getRange(row, 10).setValue(p.returnDate);
+  var toolId = loans.getRange(row, 2).getValue();
+  var qty = Number(loans.getRange(row, 12).getValue()) || 1;
+  var toolRow = findRowIndexById(tools, toolId);
+  if (toolRow > -1) {
+    var available = Number(tools.getRange(toolRow, 6).getValue()) || 0;
+    var quantity = Number(tools.getRange(toolRow, 5).getValue()) || 0;
+    tools.getRange(toolRow, 6).setValue(Math.min(quantity, available + qty));
+  }
+  return getData();
+}
+
+// ================= RECORDATORIOS AUTOMATICOS =================
+// Se ejecuta sola todos los dias a las 8am (creado por setup()).
+function checkOverdueLoans() {
+  var ss = getSS();
+  var loans = ss.getSheetByName('Loans');
+  var data = loans.getDataRange().getValues();
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var todayStr = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    // columnas: 0 id, 1 toolId, 2 toolName, 3 borrowerName, 4 borrowerEmail,
+    //           5 lenderId, 6 lenderName, 7 loanDate, 8 expectedReturnDate,
+    //           9 returnDate, 10 lastNotifiedDate
+    var returnDate = row[9];
+    var lastNotified = row[10];
+    if (returnDate) continue;
+    if (!row[8]) continue;
+    var expected = new Date(row[8]);
+    expected.setHours(0, 0, 0, 0);
+    if (today <= expected) continue;
+    if (lastNotified === todayStr) continue;
+
+    var diasVencido = Math.round((today - expected) / (1000 * 60 * 60 * 24));
+    var borrowerEmail = row[4];
+
+    if (borrowerEmail) {
+      var asunto = 'Herramienta vencida: ' + row[2];
+      var cuerpo = 'Hola ' + row[3] + ',\n\n' +
+        'El prestamo de la herramienta "' + row[2] + '" esta vencido hace ' + diasVencido + ' dia(s).\n' +
+        'Prestada por: ' + row[6] + '\n' +
+        'Fecha de prestamo: ' + row[7] + '\n' +
+        'Fecha limite de devolucion: ' + row[8] + '\n\n' +
+        'Por favor devuelvela lo antes posible.\n\n— Control de Herramientas';
+      GmailApp.sendEmail(borrowerEmail, asunto, cuerpo);
+      loans.getRange(i + 1, 11).setValue(todayStr);
+    }
+  }
+}
