@@ -286,7 +286,7 @@ function registerLoan(p) {
 
 // ================= CORREO DEL JEFE (privado, no aparece en la app) =================
 function setBossEmail() {
-  var email = 'aprendiz.mttoesw@energiasolarsa.com';
+  var email = 'aprendiz.mttoesw@energiasolarsa.com';  //<--- cambiar aqui a correo de preferencia
   PropertiesService.getScriptProperties().setProperty('BOSS_EMAIL', email);
   Logger.log('Correo del jefe guardado: ' + email);
 }
